@@ -30,6 +30,8 @@ import {
   Flag,
   Shield,
   Menu,
+  Link2,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -748,12 +750,14 @@ async function uploadThumbnail(supabase, userId, postId, file) {
 }
 
 export default function App() {
-  const { user, isGuest, profile } = useAuth();
+  const { user, isGuest, profile, loading: authLoading } = useAuth();
   const [view, setView] = useState("home"); // home | channel | tracks | patches | mypage | search | profile | followList | admin
   const [viewedUserId, setViewedUserId] = useState(null);
   const [followListUserId, setFollowListUserId] = useState(null);
   const [followListTab, setFollowListTab] = useState("followers");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [copyLinkStatus, setCopyLinkStatus] = useState(null); // null | "copied" | "error"
+  const [showRecommendedUsers, setShowRecommendedUsers] = useState(false);
   const [activeChannel, setActiveChannel] = useState(null);
   const [threadTab, setThreadTab] = useState("all");
   const [nowPlaying, setNowPlaying] = useState(null); // {id,title,author,seed,color,audioUrl}
@@ -883,6 +887,47 @@ export default function App() {
       });
   }, []);
 
+  // URLの ?post=<id> を検知して、その投稿を直接開く(共有リンク経由のアクセス)
+  // ?upgraded=1 (本登録完了直後のリダイレクト) を検知して、おすすめユーザーを表示する
+  useEffect(() => {
+    if (authLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedPostId = params.get("post");
+    const justUpgraded = params.get("upgraded") === "1";
+
+    if (sharedPostId) {
+      const supabase = createClient();
+      supabase
+        .from("posts")
+        .select(FULL_POST_SELECT)
+        .eq("id", sharedPostId)
+        .maybeSingle()
+        .then(async ({ data }) => {
+          if (!data) return;
+          let likedIds = new Set();
+          if (user && !isGuest) {
+            const { data: likedRows } = await supabase
+              .from("likes")
+              .select("post_id")
+              .eq("user_id", user.id)
+              .eq("post_id", sharedPostId);
+            likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
+          }
+          const mapped = mapMyPost(data, likedIds);
+          openDetail(mapped.kind, mapped.data, true);
+        });
+    }
+
+    if (justUpgraded && !isGuest) {
+      Promise.resolve().then(() => setShowRecommendedUsers(true));
+    }
+
+    if (sharedPostId || justUpgraded) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading]);
+
   function loadChannelThreads(channelKey, tab, page) {
     const dawChannelId = dawChannelIds[channelKey];
     if (!dawChannelId) return Promise.resolve();
@@ -991,6 +1036,7 @@ export default function App() {
     setDeleteConfirm(false);
     setEditStatus(null);
     setEditError("");
+    setCopyLinkStatus(null);
     if (interactive) {
       setCommentsLoading(true);
       loadComments(data.id);
@@ -1001,6 +1047,19 @@ export default function App() {
     setDetail(null);
     setIsEditingDetail(false);
     setDeleteConfirm(false);
+  }
+
+  function handleCopyLink(postId) {
+    const url = `${window.location.origin}/?post=${postId}`;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopyLinkStatus("copied");
+        setTimeout(() => setCopyLinkStatus(null), 2000);
+      })
+      .catch(() => {
+        setCopyLinkStatus("error");
+      });
   }
 
   function openProfile(userId) {
@@ -2203,6 +2262,22 @@ export default function App() {
               />
             </div>
 
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={() => handleCopyLink(detail.data.id)}
+                className="flex items-center gap-1 text-xs font-medium"
+                style={{ color: C.muted }}
+              >
+                <Link2 size={12} />
+                {copyLinkStatus === "copied"
+                  ? "コピーしました"
+                  : copyLinkStatus === "error"
+                    ? "コピーに失敗しました"
+                    : "リンクをコピー"}
+              </button>
+            </div>
+
             {user && detail.data.userId === user.id && (
               <div className="flex items-center gap-3 mb-3">
                 <button
@@ -2491,6 +2566,10 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+
+      {showRecommendedUsers && (
+        <RecommendedUsersModal onClose={() => setShowRecommendedUsers(false)} onOpenProfile={openProfile} />
       )}
     </div>
   );
@@ -3518,6 +3597,136 @@ function AdminView() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function RecommendedUsersModal({ onClose, onOpenProfile }) {
+  const { user, refreshProfile } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [followedIds, setFollowedIds] = useState(new Set());
+  const [busyId, setBusyId] = useState(null);
+
+  function load() {
+    if (!user) {
+      return Promise.resolve().then(() => setLoading(false));
+    }
+    const supabase = createClient();
+    return supabase
+      .from("users")
+      .select("id, display_name, avatar_url, total_likes_received, badge_level")
+      .eq("is_guest", false)
+      .neq("id", user.id)
+      .order("badge_level", { ascending: false })
+      .order("total_likes_received", { ascending: false })
+      .limit(5)
+      .then(({ data }) => {
+        setUsers(data ?? []);
+        setLoading(false);
+      });
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleFollow(targetId) {
+    if (!user || busyId) return;
+    setBusyId(targetId);
+    const supabase = createClient();
+    const { error } = await supabase.from("follows").insert({ follower_id: user.id, followed_id: targetId });
+    if (!error) {
+      setFollowedIds((prev) => new Set(prev).add(targetId));
+      await refreshProfile();
+    }
+    setBusyId(null);
+  }
+
+  function handleOpenProfile(userId) {
+    onClose();
+    onOpenProfile(userId);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
+      <div
+        className="w-full sm:max-w-md rounded-xl p-4"
+        style={{ background: C.panel, border: `1px solid ${C.border}` }}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-1.5 font-semibold">
+            <Sparkles size={16} color={C.amber} />
+            おすすめユーザー
+          </div>
+          <button type="button" onClick={onClose} style={{ color: C.muted }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="text-xs mb-4" style={{ color: C.muted }}>
+          登録ありがとうございます!活発なユーザーをフォローしてみましょう。
+        </div>
+
+        {loading ? (
+          <div className="text-sm py-4 text-center" style={{ color: C.muted }}>
+            読み込み中...
+          </div>
+        ) : users.length === 0 ? (
+          <div className="text-sm py-4 text-center" style={{ color: C.muted }}>
+            おすすめできるユーザーがまだいません
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 mb-4">
+            {users.map((u) => {
+              const badge = badgeFor(u.total_likes_received ?? 0);
+              const isFollowed = followedIds.has(u.id);
+              return (
+                <div
+                  key={u.id}
+                  className="flex items-center gap-3 p-3 rounded-xl"
+                  style={{ background: C.bg, border: `1px solid ${C.border}` }}
+                >
+                  <button type="button" onClick={() => handleOpenProfile(u.id)} className="shrink-0">
+                    <AvatarCircle name={u.display_name} avatarUrl={u.avatar_url} size={36} />
+                  </button>
+                  <button type="button" onClick={() => handleOpenProfile(u.id)} className="flex-1 min-w-0 text-left">
+                    <div className="text-sm font-medium flex items-center gap-1.5">
+                      {u.display_name}
+                      <badge.icon size={13} color={badge.color} />
+                    </div>
+                    <div className="text-xs" style={{ color: C.muted }}>
+                      称号: {badge.name}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFollow(u.id)}
+                    disabled={isFollowed || busyId === u.id}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium shrink-0"
+                    style={{
+                      background: isFollowed ? "transparent" : C.amber,
+                      border: isFollowed ? `1px solid ${C.border}` : "none",
+                      color: isFollowed ? C.text : C.bg,
+                    }}
+                  >
+                    {isFollowed ? "フォロー中" : "フォローする"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full px-4 py-2 rounded-lg text-sm font-medium"
+          style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+        >
+          スキップ
+        </button>
+      </div>
     </div>
   );
 }
