@@ -1,0 +1,17 @@
+<svg viewBox="0 8 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- icon: rounded square badge -->
+  <rect x="0" y="8" width="64" height="64" rx="16" fill="#e63946" />
+
+  <!-- monitor bezel (white frame) -->
+  <rect x="9" y="18" width="46" height="34" rx="4" fill="#f5f2ec" />
+
+  <!-- inner screen: solid red fill -->
+  <rect x="12" y="21" width="40" height="28" rx="2" fill="#e63946" />
+
+  <!-- note as an actual glyph, not hand-drawn shapes -->
+  <text x="32" y="36" font-family="Arial, sans-serif" font-size="26" fill="#f5f2ec" text-anchor="middle" dominant-baseline="central">♬</text>
+
+  <!-- monitor stand (white) -->
+  <rect x="30" y="52" width="4" height="5" fill="#f5f2ec" />
+  <rect x="20" y="57" width="24" height="4" rx="2" fill="#f5f2ec" />
+</svg>
