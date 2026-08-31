@@ -29,6 +29,7 @@ import {
   Upload,
   Flag,
   Shield,
+  Menu,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -706,6 +707,7 @@ export default function App() {
   const [viewedUserId, setViewedUserId] = useState(null);
   const [followListUserId, setFollowListUserId] = useState(null);
   const [followListTab, setFollowListTab] = useState("followers");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeChannel, setActiveChannel] = useState(null);
   const [threadTab, setThreadTab] = useState("all");
   const [nowPlaying, setNowPlaying] = useState(null); // {id,title,author,seed,color,audioUrl}
@@ -1316,18 +1318,64 @@ export default function App() {
 
   const channelColor = (id) => CHANNELS.find((c) => c.id === id)?.color ?? C.muted;
 
-  const navItem = (id, icon, label) => {
+  const navItem = (id, icon, label, onClick) => {
     const Icon = icon;
     const active = view === id;
     return (
       <button
-        onClick={() => setView(id)}
+        onClick={onClick ?? (() => setView(id))}
         className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full text-left"
         style={{ background: active ? C.panelHover : "transparent", color: active ? C.text : C.muted }}
       >
         <Icon size={17} />
         {label}
       </button>
+    );
+  };
+
+  const renderSidebarNav = (closeMenu = () => {}) => {
+    const goto = (id) => {
+      setView(id);
+      closeMenu();
+    };
+    const gotoChannel = (channelKey) => {
+      openChannel(channelKey);
+      closeMenu();
+    };
+    return (
+      <>
+        {navItem("home", Home, "ホーム", () => goto("home"))}
+        {navItem("search", Search, "検索", () => goto("search"))}
+
+        <div className="text-xs uppercase mt-4 mb-1 px-3" style={{ color: C.muted }}>
+          DAW別コミュニティ
+        </div>
+        {CHANNELS.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => gotoChannel(c.id)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-left"
+            style={{
+              background: view === "channel" && activeChannel === c.id ? C.panelHover : "transparent",
+              color: view === "channel" && activeChannel === c.id ? C.text : C.muted,
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: 999, background: c.color, display: "inline-block" }} />
+            {c.name}
+          </button>
+        ))}
+
+        <div className="text-xs uppercase mt-4 mb-1 px-3" style={{ color: C.muted }}>
+          共有
+        </div>
+        {navItem("tracks", Music2, "楽曲投稿", () => goto("tracks"))}
+        {navItem("patches", Download, "MIDI/パッチ共有", () => goto("patches"))}
+
+        <div className="mt-auto">
+          {profile?.is_admin && navItem("admin", Shield, "管理画面", () => goto("admin"))}
+          {navItem("mypage", User, "マイページ", () => goto("mypage"))}
+        </div>
+      </>
     );
   };
 
@@ -1341,7 +1389,7 @@ export default function App() {
         .row-scroll::-webkit-scrollbar-thumb{background:${C.border};border-radius:4px}
       `}</style>
 
-      <div className="fixed top-3 right-3 z-30">
+      <div className="fixed top-3 right-3 z-30 hidden md:block">
         {isGuest ? (
           <button
             type="button"
@@ -1364,7 +1412,67 @@ export default function App() {
         )}
       </div>
 
-      <div className="flex" style={{ paddingBottom: nowPlaying ? 84 : 0 }}>
+      {/* mobile header (logo + hamburger menu) */}
+      <header
+        className="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-3"
+        style={{ height: 56, background: C.panel, borderBottom: `1px solid ${C.border}` }}
+      >
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => setMobileMenuOpen(true)} aria-label="メニュー" style={{ color: C.text }}>
+            <Menu size={22} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="DTMer Connect" style={{ height: 28, width: "auto" }} />
+        </div>
+        {isGuest ? (
+          <button
+            type="button"
+            onClick={() => setView("mypage")}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium"
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+          >
+            ログイン
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={signOutAndBecomeGuest}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+          >
+            <LogOut size={13} />
+            ログアウト
+          </button>
+        )}
+      </header>
+
+      {/* mobile menu drawer */}
+      {mobileMenuOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-0 left-0 h-full flex flex-col p-4 gap-1"
+            style={{ width: 260, maxWidth: "80%", background: C.panel, borderRight: `1px solid ${C.border}` }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.svg" alt="DTMer Connect" style={{ height: 32, width: "auto" }} />
+              <button type="button" onClick={() => setMobileMenuOpen(false)} aria-label="閉じる" style={{ color: C.muted }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
+              {renderSidebarNav(() => setMobileMenuOpen(false))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex pt-14 md:pt-0" style={{ paddingBottom: nowPlaying ? 84 : 0 }}>
         {/* sidebar (desktop) */}
         <aside className="hidden md:flex flex-col w-56 shrink-0 p-4 gap-1 sticky top-0" style={{ height: "100vh" }}>
           <div className="flex items-center mb-4 px-1">
@@ -1372,37 +1480,7 @@ export default function App() {
             <img src="/logo.svg" alt="DTMer Connect" style={{ height: 44, width: "auto" }} />
           </div>
 
-          {navItem("home", Home, "ホーム")}
-          {navItem("search", Search, "検索")}
-
-          <div className="text-xs uppercase mt-4 mb-1 px-3" style={{ color: C.muted }}>
-            DAW別コミュニティ
-          </div>
-          {CHANNELS.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => openChannel(c.id)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-left"
-              style={{
-                background: view === "channel" && activeChannel === c.id ? C.panelHover : "transparent",
-                color: view === "channel" && activeChannel === c.id ? C.text : C.muted,
-              }}
-            >
-              <span style={{ width: 7, height: 7, borderRadius: 999, background: c.color, display: "inline-block" }} />
-              {c.name}
-            </button>
-          ))}
-
-          <div className="text-xs uppercase mt-4 mb-1 px-3" style={{ color: C.muted }}>
-            共有
-          </div>
-          {navItem("tracks", Music2, "楽曲投稿")}
-          {navItem("patches", Download, "MIDI/パッチ共有")}
-
-          <div className="mt-auto">
-            {profile?.is_admin && navItem("admin", Shield, "管理画面")}
-            {navItem("mypage", User, "マイページ")}
-          </div>
+          {renderSidebarNav()}
         </aside>
 
         {/* main */}
