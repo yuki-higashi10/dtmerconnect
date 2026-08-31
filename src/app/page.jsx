@@ -452,6 +452,10 @@ function timeStr(sec) {
   return `${m}:${s}`;
 }
 
+// posts全セクション共通の取得カラム(自分の投稿一覧・公開プロフィール・フォロー中フィード・横断検索で共用)
+const FULL_POST_SELECT =
+  "id, user_id, section, thread_type, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, reference_url, is_resolved, like_count, comment_count, download_count, play_count, users(display_name, total_likes_received, avatar_url), attachments(id, file_type, file_url)";
+
 // フリーワード検索: タイトル・タグ・ジャンル・(パッチの場合)対応シンセ/プラグイン名を対象にする
 function matchesSearchQuery(post, query, { includeTargetSynth = false } = {}) {
   const q = query.trim().toLowerCase();
@@ -627,9 +631,7 @@ function useFollowingFeed() {
         }
         const { data, error: postsError } = await supabase
           .from("posts")
-          .select(
-            "id, user_id, section, thread_type, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, reference_url, is_resolved, like_count, comment_count, download_count, play_count, users(display_name, total_likes_received, avatar_url), attachments(id, file_type, file_url)",
-          )
+          .select(FULL_POST_SELECT)
           .in("user_id", followedIds)
           .order("created_at", { ascending: false })
           .limit(20);
@@ -661,6 +663,50 @@ function useFollowingFeed() {
   }, [user?.id, isGuest]);
 
   return { posts, followingCount, loading, reload: load };
+}
+
+// 検索画面用: DAWコミュニティ・楽曲投稿・MIDI/パッチ共有を横断して取得しておく
+function useSearchablePosts() {
+  const { user, isGuest } = useAuth();
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  function load() {
+    const supabase = createClient();
+    return supabase
+      .from("posts")
+      .select(FULL_POST_SELECT)
+      .order("created_at", { ascending: false })
+      .limit(300)
+      .then(async ({ data, error }) => {
+        if (error || !data) {
+          setPosts([]);
+          setLoading(false);
+          return;
+        }
+        let likedIds = new Set();
+        if (user && !isGuest && data.length > 0) {
+          const { data: likedRows } = await supabase
+            .from("likes")
+            .select("post_id")
+            .eq("user_id", user.id)
+            .in(
+              "post_id",
+              data.map((p) => p.id),
+            );
+          likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
+        }
+        setPosts(data.map((p) => mapMyPost(p, likedIds)));
+        setLoading(false);
+      });
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isGuest]);
+
+  return { posts, setPosts, loading };
 }
 
 function extractPatchesStoragePath(url) {
@@ -730,6 +776,8 @@ export default function App() {
   const tracksState = useSectionPosts("track");
   const patchesState = useSectionPosts("midi_patch");
   const followingFeed = useFollowingFeed();
+  const searchState = useSearchablePosts();
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const [showNewTrackForm, setShowNewTrackForm] = useState(false);
   const [trackPostStatus, setTrackPostStatus] = useState(null);
   const [trackPostError, setTrackPostError] = useState("");
@@ -753,9 +801,7 @@ export default function App() {
     const supabase = createClient();
     return supabase
       .from("posts")
-      .select(
-        "id, user_id, section, thread_type, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, is_resolved, like_count, comment_count, download_count, play_count, users(display_name, total_likes_received, avatar_url), attachments(id, file_type, file_url)",
-      )
+      .select(FULL_POST_SELECT)
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .then(async ({ data, error }) => {
@@ -907,6 +953,9 @@ export default function App() {
     }
     setDetail((prev) => (prev && prev.data.id === postId ? { ...prev, data: { ...prev.data, ...patch } } : prev));
     setMyPosts((prev) =>
+      prev.map((mp) => (mp.data.id === postId ? { ...mp, data: { ...mp.data, ...patch } } : mp)),
+    );
+    searchState.setPosts((prev) =>
       prev.map((mp) => (mp.data.id === postId ? { ...mp, data: { ...mp.data, ...patch } } : mp)),
     );
   }
@@ -1110,6 +1159,7 @@ export default function App() {
     if (detail.kind === "track") tracksState.setPosts((prev) => prev.filter((t) => t.id !== postId));
     if (detail.kind === "patch") patchesState.setPosts((prev) => prev.filter((t) => t.id !== postId));
     setMyPosts((prev) => prev.filter((mp) => mp.data.id !== postId));
+    searchState.setPosts((prev) => prev.filter((mp) => mp.data.id !== postId));
     closeDetail();
   }
 
@@ -1549,29 +1599,67 @@ export default function App() {
             </div>
           )}
 
-          {view === "search" && (
-            <div>
-              <h1 className="display-font text-xl font-bold mb-3">検索</h1>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
-                <Search size={15} color={C.muted} />
-                <input placeholder="MIDI・パッチ・お悩みを検索" className="bg-transparent outline-none text-sm flex-1" style={{ color: C.text }} />
+          {view === "search" && (() => {
+            const q = globalSearchQuery.trim();
+            const searchResults = q
+              ? searchState.posts.filter((item) =>
+                  matchesSearchQuery(item.data, q, { includeTargetSynth: item.kind === "patch" }),
+                )
+              : [];
+            return (
+              <div>
+                <h1 className="display-font text-xl font-bold mb-3">検索</h1>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+                  <Search size={15} color={C.muted} />
+                  <input
+                    value={globalSearchQuery}
+                    onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                    placeholder="タイトル・タグ・ジャンルで検索"
+                    className="bg-transparent outline-none text-sm flex-1"
+                    style={{ color: C.text }}
+                  />
+                </div>
+
+                {q && (
+                  <div className="flex flex-col gap-2 mb-6">
+                    {searchState.loading ? (
+                      <div className="text-sm" style={{ color: C.muted }}>
+                        読み込み中...
+                      </div>
+                    ) : searchResults.length === 0 ? (
+                      <div className="text-sm" style={{ color: C.muted }}>
+                        「{q}」に一致する投稿が見つかりませんでした
+                      </div>
+                    ) : (
+                      searchResults.map((item) => (
+                        <SearchResultRow
+                          key={`${item.kind}-${item.data.id}`}
+                          item={item}
+                          onOpen={() => openDetail(item.kind, item.data, true)}
+                          onOpenProfile={openProfile}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {CHANNELS.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => openChannel(c.id)}
+                      className="p-4 rounded-xl text-left"
+                      style={{ background: C.panel, border: `1px solid ${C.border}` }}
+                    >
+                      <span style={{ color: c.color }} className="font-medium text-sm">
+                        {c.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {CHANNELS.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => openChannel(c.id)}
-                    className="p-4 rounded-xl text-left"
-                    style={{ background: C.panel, border: `1px solid ${C.border}` }}
-                  >
-                    <span style={{ color: c.color }} className="font-medium text-sm">
-                      {c.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {view === "channel" && activeChannel && (() => {
             const totalPages = Math.max(1, Math.ceil(threadsTotalCount / THREADS_PAGE_SIZE));
@@ -2533,6 +2621,61 @@ function ThreadCard({ t, color, onOpen, onOpenProfile }) {
   );
 }
 
+const SEARCH_KIND_META = {
+  thread: { label: "スレッド", color: C.sky },
+  track: { label: "楽曲", color: C.teal },
+  patch: { label: "MIDI/パッチ", color: C.amber },
+};
+
+function SearchResultRow({ item, onOpen, onOpenProfile }) {
+  const meta = SEARCH_KIND_META[item.kind];
+  const { data } = item;
+  return (
+    <div
+      className="p-4 rounded-xl cursor-pointer"
+      style={{ background: C.panel, border: `1px solid ${C.border}` }}
+      onClick={onOpen}
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span
+          className="text-xs font-medium px-2 py-0.5 rounded-full"
+          style={{ background: C.bg, color: meta.color, border: `1px solid ${C.border}` }}
+        >
+          {meta.label}
+        </span>
+        {data.genre && (
+          <span className="text-xs" style={{ color: C.muted }}>
+            {data.genre}
+          </span>
+        )}
+      </div>
+      <div className="text-base font-medium mb-1.5">{data.title}</div>
+      {data.tags?.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {data.tags.map((tag) => (
+            <span
+              key={tag}
+              className="text-xs px-2 py-0.5 rounded-full"
+              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.muted }}
+            >
+              #{tag}
+            </span>
+          ))}
+        </div>
+      )}
+      <AuthorLine
+        name={data.author}
+        likes={data.authorLikes}
+        avatarUrl={data.authorAvatarUrl}
+        avatarSize={18}
+        textClassName="text-xs"
+        userId={data.userId}
+        onOpenProfile={onOpenProfile}
+      />
+    </div>
+  );
+}
+
 const IMAGE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -2957,9 +3100,7 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
 
         const { data: postRows } = await supabase
           .from("posts")
-          .select(
-            "id, user_id, section, thread_type, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, reference_url, is_resolved, like_count, comment_count, download_count, play_count, users(display_name, total_likes_received, avatar_url), attachments(id, file_type, file_url)",
-          )
+          .select(FULL_POST_SELECT)
           .eq("user_id", userId)
           .order("created_at", { ascending: false });
         setPosts((postRows ?? []).map((p) => mapMyPost(p, new Set())));
