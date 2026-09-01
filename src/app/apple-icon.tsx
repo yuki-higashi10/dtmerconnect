@@ -1,10 +1,12 @@
-import { ImageResponse } from "next/og";
-import { iconArt } from "@/lib/iconArt";
+import sharp from "sharp";
+import { ICON_SVG } from "@/lib/iconSvg";
 
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
-// iOSは角丸を自前でマスクするため、apple-touch-iconは角丸なしの正方形で用意する
-export default function AppleIcon() {
-  return new ImageResponse(iconArt(180, { rounded: false }), { ...size });
+// アプリロゴ(icon.svg)をそのままラスタライズしてiOSホーム画面用アイコンを生成する
+export default async function AppleIcon() {
+  const png = await sharp(Buffer.from(ICON_SVG)).resize(size.width, size.height).png().toBuffer();
+
+  return new Response(new Uint8Array(png));
 }
