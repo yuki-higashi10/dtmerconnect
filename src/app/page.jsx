@@ -2487,8 +2487,13 @@ export default function App() {
           { id: "patches", icon: Download },
           { id: "mypage", icon: User },
         ].map((n) => (
-          <button key={n.id} onClick={() => setView(n.id)} style={{ color: view === n.id ? C.text : C.muted }}>
-            <n.icon size={20} />
+          <button
+            key={n.id}
+            onClick={() => setView(n.id)}
+            className="p-2.5"
+            style={{ color: view === n.id ? C.text : C.muted }}
+          >
+            <n.icon size={24} />
           </button>
         ))}
       </div>
