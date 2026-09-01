@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
+import { recordEngagementAction } from "@/lib/pwaEngagement";
 
 const C = {
   bg: "#0e1013",
@@ -245,6 +246,8 @@ function LikeButton({ postId, liked, count, size = 14, onToggled }) {
 
     if (error) {
       onToggled(postId, liked, count);
+    } else if (nextLiked) {
+      recordEngagementAction();
     }
     setBusy(false);
   }
@@ -282,6 +285,8 @@ function BookmarkButton({ postId, bookmarked, size = 14, onToggled }) {
 
     if (error) {
       onToggled(postId, bookmarked);
+    } else if (nextBookmarked) {
+      recordEngagementAction();
     }
     setBusy(false);
   }
@@ -1451,6 +1456,7 @@ export default function App() {
     }
     setCommentText("");
     setCommentStatus(null);
+    recordEngagementAction();
     applyPostPatch(detail.kind, detail.data.id, { comments: (detail.data.comments ?? 0) + 1 });
     await loadComments(detail.data.id);
   }
@@ -1490,6 +1496,7 @@ export default function App() {
     setPostStatus(null);
     setShowNewThreadForm(false);
     setThreadsPage(0);
+    recordEngagementAction();
     await loadChannelThreads(activeChannel, threadTab, 0);
   }
 
@@ -1541,6 +1548,7 @@ export default function App() {
 
     setTrackPostStatus(null);
     setShowNewTrackForm(false);
+    recordEngagementAction();
     await tracksState.reload();
   }
 
@@ -1593,6 +1601,7 @@ export default function App() {
 
     setPatchPostStatus(null);
     setShowNewPatchForm(false);
+    recordEngagementAction();
     await patchesState.reload();
   }
 
