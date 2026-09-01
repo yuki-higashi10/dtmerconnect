@@ -3935,6 +3935,64 @@ function AdminView() {
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementStatus, setAnnouncementStatus] = useState(null); // null | "sending" | "sent" | "error"
   const [announcementError, setAnnouncementError] = useState("");
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  function loadStats() {
+    const supabase = createClient();
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    // 週の始まりは月曜日とする(日曜日は6日前倒し)
+    weekStart.setDate(todayStart.getDate() - ((todayStart.getDay() + 6) % 7));
+
+    const countQuery = (table, apply) => {
+      let query = supabase.from(table).select("*", { count: "exact", head: true });
+      if (apply) query = apply(query);
+      return query;
+    };
+
+    return Promise.all([
+      countQuery("users", (q) => q.eq("is_guest", false)),
+      countQuery("users", (q) => q.eq("is_guest", false).gte("created_at", todayStart.toISOString())),
+      countQuery("users", (q) => q.eq("is_guest", false).gte("created_at", weekStart.toISOString())),
+      countQuery("posts", (q) => q.eq("section", "daw_community")),
+      countQuery("posts", (q) => q.eq("section", "track")),
+      countQuery("posts", (q) => q.eq("section", "midi_patch")),
+      countQuery("likes"),
+      countQuery("comments"),
+      countQuery("follows"),
+    ]).then(
+      ([
+        totalUsers,
+        newToday,
+        newThisWeek,
+        postsDawCommunity,
+        postsTrack,
+        postsMidiPatch,
+        totalLikes,
+        totalComments,
+        totalFollows,
+      ]) => {
+        setStats({
+          totalUsers: totalUsers.count ?? 0,
+          newToday: newToday.count ?? 0,
+          newThisWeek: newThisWeek.count ?? 0,
+          postsDawCommunity: postsDawCommunity.count ?? 0,
+          postsTrack: postsTrack.count ?? 0,
+          postsMidiPatch: postsMidiPatch.count ?? 0,
+          totalLikes: totalLikes.count ?? 0,
+          totalComments: totalComments.count ?? 0,
+          totalFollows: totalFollows.count ?? 0,
+        });
+        setStatsLoading(false);
+      },
+    );
+  }
+
+  useEffect(() => {
+    loadStats();
+  }, []);
 
   function load() {
     const supabase = createClient();
@@ -4008,9 +4066,41 @@ function AdminView() {
     );
   }
 
+  const statItems = [
+    { label: "登録ユーザー数(本登録)", value: stats?.totalUsers },
+    { label: "本日の新規登録", value: stats?.newToday },
+    { label: "今週の新規登録", value: stats?.newThisWeek },
+    { label: "DAW別コミュニティ投稿数", value: stats?.postsDawCommunity },
+    { label: "楽曲投稿数", value: stats?.postsTrack },
+    { label: "MIDI/パッチ投稿数", value: stats?.postsMidiPatch },
+    { label: "いいね総数", value: stats?.totalLikes },
+    { label: "コメント総数", value: stats?.totalComments },
+    { label: "フォロー総数", value: stats?.totalFollows },
+  ];
+
   return (
     <div>
       <h1 className="display-font text-xl font-bold mb-4">管理画面</h1>
+
+      <div className="mb-6">
+        <div className="text-sm font-medium mb-2">ダッシュボード</div>
+        {statsLoading ? (
+          <div className="text-sm" style={{ color: C.muted }}>
+            集計中...
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {statItems.map((item) => (
+              <div key={item.label} className="p-3 rounded-xl" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+                <div className="text-xs mb-1" style={{ color: C.muted }}>
+                  {item.label}
+                </div>
+                <div className="text-lg font-semibold">{(item.value ?? 0).toLocaleString("ja-JP")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="p-4 rounded-xl mb-6" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
         <div className="text-sm font-medium mb-2">お知らせを送信</div>
