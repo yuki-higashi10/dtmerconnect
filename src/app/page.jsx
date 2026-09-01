@@ -2490,10 +2490,10 @@ export default function App() {
           <button
             key={n.id}
             onClick={() => setView(n.id)}
-            className="p-2.5"
+            className="p-3"
             style={{ color: view === n.id ? C.text : C.muted }}
           >
-            <n.icon size={24} />
+            <n.icon size={28} />
           </button>
         ))}
       </div>
