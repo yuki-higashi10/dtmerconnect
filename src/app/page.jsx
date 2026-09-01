@@ -39,6 +39,12 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
 import { recordEngagementAction } from "@/lib/pwaEngagement";
+import {
+  isPushSupported,
+  hasPushBeenPrompted,
+  markPushPrompted,
+  requestPushPermissionAndSubscribe,
+} from "@/lib/webPush";
 
 const C = {
   bg: "#0e1013",
@@ -975,6 +981,16 @@ export default function App() {
     loadMyPosts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, isGuest]);
+
+  // 通知ベルを初めて開いたタイミングでプッシュ通知の許可ダイアログを出す
+  useEffect(() => {
+    if (!showNotifications || !user || isGuest) return;
+    if (!isPushSupported() || hasPushBeenPrompted()) return;
+    if (typeof Notification === "undefined" || Notification.permission !== "default") return;
+    markPushPrompted();
+    const supabase = createClient();
+    requestPushPermissionAndSubscribe(supabase, user.id);
+  }, [showNotifications, user, isGuest]);
 
   // マイページ「保存した投稿」用
   const [bookmarkedPosts, setBookmarkedPosts] = useState([]);
