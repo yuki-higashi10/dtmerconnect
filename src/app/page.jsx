@@ -33,6 +33,8 @@ import {
   Link2,
   Sparkles,
   Bell,
+  Bookmark,
+  AtSign,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -262,6 +264,131 @@ function LikeButton({ postId, liked, count, size = 14, onToggled }) {
   );
 }
 
+function BookmarkButton({ postId, bookmarked, size = 14, onToggled }) {
+  const { user, isGuest } = useAuth();
+  const [busy, setBusy] = useState(false);
+
+  async function toggle(e) {
+    e.stopPropagation();
+    if (isGuest || busy || !user) return;
+    setBusy(true);
+    const supabase = createClient();
+    const nextBookmarked = !bookmarked;
+    onToggled(postId, nextBookmarked);
+
+    const { error } = nextBookmarked
+      ? await supabase.from("bookmarks").insert({ post_id: postId, user_id: user.id })
+      : await supabase.from("bookmarks").delete().eq("post_id", postId).eq("user_id", user.id);
+
+    if (error) {
+      onToggled(postId, bookmarked);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={isGuest || busy}
+      className="flex items-center gap-1 text-sm"
+      style={{ color: bookmarked ? C.amber : C.muted, cursor: isGuest ? "default" : "pointer" }}
+      title={isGuest ? "保存するには本登録が必要です" : bookmarked ? "保存を解除" : "保存する"}
+    >
+      <Bookmark size={size} fill={bookmarked ? C.amber : "none"} />
+    </button>
+  );
+}
+
+// テキストエリア中の「@」入力を検知し、表示名候補をオートコンプリート表示する
+function MentionTextarea({ value, onChange, className, style, ...rest }) {
+  const textareaRef = useRef(null);
+  const [mentionStart, setMentionStart] = useState(null);
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+
+  useEffect(() => {
+    if (mentionQuery === null) return;
+    const supabase = createClient();
+    const handle = setTimeout(() => {
+      supabase
+        .from("users")
+        .select("id, display_name, avatar_url")
+        .ilike("display_name", `%${mentionQuery}%`)
+        .limit(6)
+        .then(({ data }) => setSuggestions(data ?? []));
+    }, 150);
+    return () => clearTimeout(handle);
+  }, [mentionQuery]);
+
+  function closeMentionMenu() {
+    setMentionStart(null);
+    setMentionQuery(null);
+    setSuggestions([]);
+  }
+
+  function handleChange(e) {
+    onChange(e);
+    const pos = e.target.selectionStart;
+    const textBefore = e.target.value.slice(0, pos);
+    const atIdx = textBefore.lastIndexOf("@");
+    if (atIdx === -1) {
+      closeMentionMenu();
+      return;
+    }
+    const between = textBefore.slice(atIdx + 1);
+    const prevChar = atIdx > 0 ? textBefore[atIdx - 1] : null;
+    if (/\s/.test(between) || (prevChar && !/\s/.test(prevChar))) {
+      closeMentionMenu();
+      return;
+    }
+    setMentionStart(atIdx);
+    setMentionQuery(between);
+  }
+
+  function selectSuggestion(u) {
+    const el = textareaRef.current;
+    if (!el || mentionStart === null) return;
+    const pos = el.selectionStart;
+    const newValue = value.slice(0, mentionStart) + "@" + u.display_name + " " + value.slice(pos);
+    onChange({ target: { value: newValue } });
+    const newPos = mentionStart + u.display_name.length + 2;
+    closeMentionMenu();
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(newPos, newPos);
+    });
+  }
+
+  return (
+    <div className="relative">
+      <textarea ref={textareaRef} value={value} onChange={handleChange} className={`w-full ${className ?? ""}`} style={style} {...rest} />
+      {mentionStart !== null && suggestions.length > 0 && (
+        <div
+          className="absolute left-0 right-0 z-10 mt-1 rounded-lg overflow-hidden"
+          style={{ top: "100%", background: C.panel, border: `1px solid ${C.border}` }}
+        >
+          {suggestions.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                selectSuggestion(u);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left"
+              style={{ color: C.text }}
+            >
+              <AvatarCircle name={u.display_name} avatarUrl={u.avatar_url} size={20} />
+              {u.display_name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReportButton({ targetType, targetId }) {
   const { user, isGuest } = useAuth();
   const [open, setOpen] = useState(false);
@@ -480,6 +607,13 @@ const ATTACHMENT_FILE_MAX_BYTES = 20 * 1024 * 1024;
 const MIDI_EXTENSIONS = ["mid", "midi"];
 const AUDIO_EXTENSIONS = ["mp3", "wav", "m4a", "ogg"];
 
+// user_id が指定postIdsのうちどれに対して行を持つか(いいね/ブックマーク済みIDの集合)を取得する
+async function fetchOwnIdSet(supabase, table, userId, postIds) {
+  if (!userId || postIds.length === 0) return new Set();
+  const { data } = await supabase.from(table).select("post_id").eq("user_id", userId).in("post_id", postIds);
+  return new Set((data ?? []).map((r) => r.post_id));
+}
+
 function useSectionPosts(section) {
   const { user, isGuest } = useAuth();
   const [posts, setPosts] = useState([]);
@@ -497,18 +631,10 @@ function useSectionPosts(section) {
       .limit(60)
       .then(async ({ data, error }) => {
         if (!error && data) {
-          let likedIds = new Set();
-          if (user && !isGuest && data.length > 0) {
-            const { data: likedRows } = await supabase
-              .from("likes")
-              .select("post_id")
-              .eq("user_id", user.id)
-              .in(
-                "post_id",
-                data.map((p) => p.id),
-              );
-            likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
-          }
+          const ids = data.map((p) => p.id);
+          const canFetchOwn = user && !isGuest;
+          const likedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "likes", user.id, ids) : new Set();
+          const bookmarkedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "bookmarks", user.id, ids) : new Set();
           setPosts(
             data.map((p) => ({
               id: p.id,
@@ -531,6 +657,7 @@ function useSectionPosts(section) {
               authorAvatarUrl: p.users?.avatar_url ?? null,
               likes: p.like_count,
               liked: likedIds.has(p.id),
+              bookmarked: bookmarkedIds.has(p.id),
               comments: p.comment_count,
               downloads: p.download_count,
               playCount: p.play_count,
@@ -552,7 +679,7 @@ function useSectionPosts(section) {
 
 // patchesバケットの公開URLから、削除に必要なストレージ上のパスを取り出す
 // マイページの「自分の投稿」一覧用に、posts行を各種一覧/詳細モーダルと同じ形へ整形する
-function mapMyPost(p, likedIds) {
+function mapMyPost(p, likedIds, bookmarkedIds = new Set()) {
   const base = {
     id: p.id,
     userId: p.user_id,
@@ -563,6 +690,7 @@ function mapMyPost(p, likedIds) {
     authorAvatarUrl: p.users?.avatar_url ?? null,
     likes: p.like_count,
     liked: likedIds.has(p.id),
+    bookmarked: bookmarkedIds.has(p.id),
     comments: p.comment_count,
     attachments: p.attachments ?? [],
     thumbnailUrl: p.thumbnail_url,
@@ -643,19 +771,10 @@ function useFollowingFeed() {
           setLoading(false);
           return;
         }
-        let likedIds = new Set();
-        if (data.length > 0) {
-          const { data: likedRows } = await supabase
-            .from("likes")
-            .select("post_id")
-            .eq("user_id", user.id)
-            .in(
-              "post_id",
-              data.map((p) => p.id),
-            );
-          likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
-        }
-        setPosts(data.map((p) => mapMyPost(p, likedIds)));
+        const ids = data.map((p) => p.id);
+        const likedIds = await fetchOwnIdSet(supabase, "likes", user.id, ids);
+        const bookmarkedIds = await fetchOwnIdSet(supabase, "bookmarks", user.id, ids);
+        setPosts(data.map((p) => mapMyPost(p, likedIds, bookmarkedIds)));
         setLoading(false);
       });
   }
@@ -687,19 +806,11 @@ function useSearchablePosts() {
           setLoading(false);
           return;
         }
-        let likedIds = new Set();
-        if (user && !isGuest && data.length > 0) {
-          const { data: likedRows } = await supabase
-            .from("likes")
-            .select("post_id")
-            .eq("user_id", user.id)
-            .in(
-              "post_id",
-              data.map((p) => p.id),
-            );
-          likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
-        }
-        setPosts(data.map((p) => mapMyPost(p, likedIds)));
+        const ids = data.map((p) => p.id);
+        const canFetchOwn = user && !isGuest;
+        const likedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "likes", user.id, ids) : new Set();
+        const bookmarkedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "bookmarks", user.id, ids) : new Set();
+        setPosts(data.map((p) => mapMyPost(p, likedIds, bookmarkedIds)));
         setLoading(false);
       });
   }
@@ -848,19 +959,10 @@ export default function App() {
       .order("created_at", { ascending: false })
       .then(async ({ data, error }) => {
         if (error || !data) return;
-        let likedIds = new Set();
-        if (data.length > 0) {
-          const { data: likedRows } = await supabase
-            .from("likes")
-            .select("post_id")
-            .eq("user_id", user.id)
-            .in(
-              "post_id",
-              data.map((p) => p.id),
-            );
-          likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
-        }
-        setMyPosts(data.map((p) => mapMyPost(p, likedIds)));
+        const ids = data.map((p) => p.id);
+        const likedIds = await fetchOwnIdSet(supabase, "likes", user.id, ids);
+        const bookmarkedIds = await fetchOwnIdSet(supabase, "bookmarks", user.id, ids);
+        setMyPosts(data.map((p) => mapMyPost(p, likedIds, bookmarkedIds)));
       });
   }
 
@@ -868,6 +970,65 @@ export default function App() {
     loadMyPosts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, isGuest]);
+
+  // マイページ「保存した投稿」用
+  const [bookmarkedPosts, setBookmarkedPosts] = useState([]);
+
+  function loadBookmarkedPosts() {
+    if (!user || isGuest) {
+      return Promise.resolve().then(() => setBookmarkedPosts([]));
+    }
+    const supabase = createClient();
+    return supabase
+      .from("bookmarks")
+      .select(`post_id, posts(${FULL_POST_SELECT})`)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .then(async ({ data, error }) => {
+        if (error || !data) return;
+        const rows = data.filter((r) => r.posts);
+        const ids = rows.map((r) => r.post_id);
+        const likedIds = await fetchOwnIdSet(supabase, "likes", user.id, ids);
+        setBookmarkedPosts(rows.map((r) => mapMyPost(r.posts, likedIds, new Set(ids))));
+      });
+  }
+
+  useEffect(() => {
+    loadBookmarkedPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isGuest]);
+
+  // マイページ「ブロック中のユーザー」用
+  const [blockedUsers, setBlockedUsers] = useState([]);
+
+  function loadBlockedUsers() {
+    if (!user || isGuest) {
+      return Promise.resolve().then(() => setBlockedUsers([]));
+    }
+    const supabase = createClient();
+    return supabase
+      .from("blocks")
+      .select("id, blocked:users!blocked_id(id, display_name, avatar_url)")
+      .eq("blocker_id", user.id)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (error || !data) return;
+        setBlockedUsers(data.filter((r) => r.blocked));
+      });
+  }
+
+  useEffect(() => {
+    loadBlockedUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isGuest]);
+
+  async function handleUnblock(blockRowId) {
+    const supabase = createClient();
+    const { error } = await supabase.from("blocks").delete().eq("id", blockRowId);
+    if (!error) {
+      setBlockedUsers((prev) => prev.filter((r) => r.id !== blockRowId));
+    }
+  }
 
   const [threadComments, setThreadComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -935,16 +1096,10 @@ export default function App() {
       .maybeSingle()
       .then(async ({ data }) => {
         if (!data) return;
-        let likedIds = new Set();
-        if (user && !isGuest) {
-          const { data: likedRows } = await supabase
-            .from("likes")
-            .select("post_id")
-            .eq("user_id", user.id)
-            .eq("post_id", postId);
-          likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
-        }
-        const mapped = mapMyPost(data, likedIds);
+        const canFetchOwn = user && !isGuest;
+        const likedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "likes", user.id, [postId]) : new Set();
+        const bookmarkedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "bookmarks", user.id, [postId]) : new Set();
+        const mapped = mapMyPost(data, likedIds, bookmarkedIds);
         openDetail(mapped.kind, mapped.data, true);
       });
   }
@@ -978,7 +1133,7 @@ export default function App() {
       notificationsState.setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
     }
     setShowNotifications(false);
-    if ((n.type === "like" || n.type === "comment") && n.post_id) {
+    if ((n.type === "like" || n.type === "comment" || n.type === "mention") && n.post_id) {
       openPostById(n.post_id);
     } else if (n.type === "follow" && n.actor?.id) {
       openProfile(n.actor.id);
@@ -1007,18 +1162,10 @@ export default function App() {
       .range(from, to)
       .then(async ({ data, error, count }) => {
         if (!error && data) {
-          let likedIds = new Set();
-          if (user && !isGuest && data.length > 0) {
-            const { data: likedRows } = await supabase
-              .from("likes")
-              .select("post_id")
-              .eq("user_id", user.id)
-              .in(
-                "post_id",
-                data.map((p) => p.id),
-              );
-            likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
-          }
+          const ids = data.map((p) => p.id);
+          const canFetchOwn = user && !isGuest;
+          const likedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "likes", user.id, ids) : new Set();
+          const bookmarkedIds = canFetchOwn ? await fetchOwnIdSet(supabase, "bookmarks", user.id, ids) : new Set();
           setChannelThreads(
             data.map((p) => ({
               id: p.id,
@@ -1033,6 +1180,7 @@ export default function App() {
               authorAvatarUrl: p.users?.avatar_url ?? null,
               likes: p.like_count,
               liked: likedIds.has(p.id),
+              bookmarked: bookmarkedIds.has(p.id),
               comments: p.comment_count,
               resolved: p.is_resolved,
             })),
@@ -1059,6 +1207,11 @@ export default function App() {
     );
     searchState.setPosts((prev) =>
       prev.map((mp) => (mp.data.id === postId ? { ...mp, data: { ...mp.data, ...patch } } : mp)),
+    );
+    setBookmarkedPosts((prev) =>
+      "bookmarked" in patch && !patch.bookmarked
+        ? prev.filter((mp) => mp.data.id !== postId)
+        : prev.map((mp) => (mp.data.id === postId ? { ...mp, data: { ...mp.data, ...patch } } : mp)),
     );
   }
 
@@ -1871,6 +2024,7 @@ export default function App() {
                       color={channelColor(t.channel)}
                       interactive
                       onLikeToggle={(postId, liked, count) => applyPostPatch("thread", postId, { liked, likes: count })}
+                      onBookmarkToggle={(postId, bookmarked) => applyPostPatch("thread", postId, { bookmarked })}
                       onOpen={() => openDetail("thread", t, true)}
                       onOpenProfile={openProfile}
                     />
@@ -2144,6 +2298,55 @@ export default function App() {
                 </div>
               ) : (
                 <PostLinkList posts={myPosts} onOpenPost={openDetail} />
+              )}
+
+              {!isGuest && (
+                <>
+                  <div className="text-xs uppercase mb-2 mt-6" style={{ color: C.muted }}>
+                    保存した投稿
+                  </div>
+                  <PostLinkList posts={bookmarkedPosts} onOpenPost={openDetail} />
+
+                  <div className="text-xs uppercase mb-2 mt-6" style={{ color: C.muted }}>
+                    ブロック中のユーザー
+                  </div>
+                  {blockedUsers.length === 0 ? (
+                    <div className="text-sm" style={{ color: C.muted }}>
+                      ブロック中のユーザーはいません
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {blockedUsers.map((r) => (
+                        <div
+                          key={r.id}
+                          className="flex items-center justify-between gap-2 p-3 rounded-lg"
+                          style={{ background: C.panel, border: `1px solid ${C.border}` }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => openProfile(r.blocked.id)}
+                            className="flex items-center gap-2 min-w-0"
+                          >
+                            <AvatarCircle name={r.blocked.display_name} avatarUrl={r.blocked.avatar_url} size={28} />
+                            <span className="text-sm truncate">{r.blocked.display_name}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUnblock(r.id)}
+                            className="text-xs font-medium shrink-0"
+                            style={{ color: C.muted }}
+                          >
+                            ブロック解除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-6">
+                    <DeleteAccountSection />
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -2527,13 +2730,21 @@ export default function App() {
 
             <div className="flex items-center gap-4 text-xs mt-3" style={{ color: C.muted }}>
               {detail.interactive ? (
-                <LikeButton
-                  postId={detail.data.id}
-                  liked={detail.data.liked}
-                  count={detail.data.likes}
-                  onToggled={(postId, liked, count) => applyPostPatch(detail.kind, postId, { liked, likes: count })}
-                  size={13}
-                />
+                <>
+                  <LikeButton
+                    postId={detail.data.id}
+                    liked={detail.data.liked}
+                    count={detail.data.likes}
+                    onToggled={(postId, liked, count) => applyPostPatch(detail.kind, postId, { liked, likes: count })}
+                    size={13}
+                  />
+                  <BookmarkButton
+                    postId={detail.data.id}
+                    bookmarked={detail.data.bookmarked}
+                    onToggled={(postId, bookmarked) => applyPostPatch(detail.kind, postId, { bookmarked })}
+                    size={13}
+                  />
+                </>
               ) : (
                 <span className="flex items-center gap-1">
                   <Heart size={13} /> {detail.data.likes}
@@ -2618,13 +2829,13 @@ export default function App() {
                   </div>
                 ) : (
                   <form onSubmit={handleSubmitComment} className="flex flex-col gap-2">
-                    <textarea
+                    <MentionTextarea
                       value={commentText}
                       onChange={(e) => setCommentText(e.target.value)}
-                      placeholder="コメントを入力"
+                      placeholder="コメントを入力(「@ユーザー名」でメンション)"
                       rows={2}
                       maxLength={1000}
-                      className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg resize-none"
+                      className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg resize-none w-full"
                       style={{ border: `1px solid ${C.border}`, color: C.text }}
                     />
                     {commentStatus === "error" && (
@@ -2851,7 +3062,7 @@ const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
 function AuthPanel() {
   const { user, profile, isGuest, loading, refreshProfile } = useAuth();
-  const [authMode, setAuthMode] = useState("login"); // "login" | "register"
+  const [authMode, setAuthMode] = useState("login"); // "login" | "register" | "forgot"
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -2863,6 +3074,10 @@ function AuthPanel() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginStatus, setLoginStatus] = useState(null); // null | "logging-in" | "error"
   const [loginError, setLoginError] = useState("");
+
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotStatus, setForgotStatus] = useState(null); // null | "sending" | "sent" | "error"
+  const [forgotError, setForgotError] = useState("");
 
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -2943,7 +3158,9 @@ function AuthPanel() {
       setErrorMsg(
         nameError.code === "23505"
           ? "このユーザー名は既に使われています。別の名前をお試しください。"
-          : nameError.message,
+          : nameError.code === "23514"
+            ? "ユーザー名にスペースは使用できません。"
+            : nameError.message,
       );
       return;
     }
@@ -2973,6 +3190,22 @@ function AuthPanel() {
       return;
     }
     setLoginStatus(null);
+  }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault();
+    setForgotStatus("sending");
+    setForgotError("");
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    if (error) {
+      setForgotStatus("error");
+      setForgotError(error.message);
+      return;
+    }
+    setForgotStatus("sent");
   }
 
   if (loading) {
@@ -3089,15 +3322,71 @@ function AuthPanel() {
                     {loginError}
                   </div>
                 )}
-                <button
-                  type="submit"
-                  disabled={loginStatus === "logging-in"}
-                  className="self-end px-4 py-2 rounded-lg text-sm font-medium"
-                  style={{ background: C.amber, color: C.bg }}
-                >
-                  {loginStatus === "logging-in" ? "ログイン中..." : "ログインする"}
-                </button>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("forgot")}
+                    className="text-xs hover:underline"
+                    style={{ color: C.muted }}
+                  >
+                    パスワードを忘れた方はこちら
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loginStatus === "logging-in"}
+                    className="px-4 py-2 rounded-lg text-sm font-medium"
+                    style={{ background: C.amber, color: C.bg }}
+                  >
+                    {loginStatus === "logging-in" ? "ログイン中..." : "ログインする"}
+                  </button>
+                </div>
               </form>
+            </>
+          ) : authMode === "forgot" ? (
+            <>
+              <div className="text-xs mb-3" style={{ color: C.muted }}>
+                登録済みのメールアドレスを入力すると、パスワード再設定用のメールが届きます。
+              </div>
+              {forgotStatus === "sent" ? (
+                <div className="text-xs" style={{ color: C.teal }}>
+                  再設定用のメールを送信しました。メール内のリンクから新しいパスワードを設定してください。
+                </div>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="flex flex-col gap-2">
+                  <input
+                    type="email"
+                    required
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg"
+                    style={{ border: `1px solid ${C.border}`, color: C.text }}
+                  />
+                  {forgotStatus === "error" && (
+                    <div className="text-xs" style={{ color: C.rose }}>
+                      {forgotError}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode("login")}
+                      className="text-xs hover:underline"
+                      style={{ color: C.muted }}
+                    >
+                      ログインに戻る
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotStatus === "sending"}
+                      className="px-4 py-2 rounded-lg text-sm font-medium"
+                      style={{ background: C.amber, color: C.bg }}
+                    >
+                      {forgotStatus === "sending" ? "送信中..." : "再設定メールを送信"}
+                    </button>
+                  </div>
+                </form>
+              )}
             </>
           ) : (
             <>
@@ -3115,8 +3404,8 @@ function AuthPanel() {
                     required
                     maxLength={20}
                     value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="ユーザー名 (例: yuki_dtm、ゆうき)"
+                    onChange={(e) => setDisplayName(e.target.value.replace(/\s/g, ""))}
+                    placeholder="ユーザー名 (スペース不可, 例: yuki_dtm、ゆうき)"
                     className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg"
                     style={{ border: `1px solid ${C.border}`, color: C.text }}
                   />
@@ -3250,13 +3539,15 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
   const [followBusy, setFollowBusy] = useState(false);
   const [showGuestNotice, setShowGuestNotice] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
 
   function load() {
     const supabase = createClient();
     return supabase
       .from("users")
       .select(
-        "id, display_name, avatar_url, total_likes_received, badge_level, bio, used_daws, activity_area, sns_links, follower_count, following_count",
+        "id, display_name, avatar_url, total_likes_received, badge_level, bio, used_daws, activity_area, sns_links, follower_count, following_count, is_deleted",
       )
       .eq("id", userId)
       .single()
@@ -3283,8 +3574,17 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
             .eq("followed_id", userId)
             .maybeSingle();
           setIsFollowing(!!followRow);
+
+          const { data: blockRow } = await supabase
+            .from("blocks")
+            .select("id")
+            .eq("blocker_id", user.id)
+            .eq("blocked_id", userId)
+            .maybeSingle();
+          setIsBlocked(!!blockRow);
         } else {
           setIsFollowing(false);
+          setIsBlocked(false);
         }
         setLoading(false);
       });
@@ -3315,6 +3615,31 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
       }
     }
     setFollowBusy(false);
+  }
+
+  async function handleToggleBlock() {
+    if (!user || isGuest || blockBusy) return;
+    setBlockBusy(true);
+    const supabase = createClient();
+    if (isBlocked) {
+      const { error } = await supabase.from("blocks").delete().eq("blocker_id", user.id).eq("blocked_id", userId);
+      if (!error) setIsBlocked(false);
+    } else {
+      const { error } = await supabase.from("blocks").insert({ blocker_id: user.id, blocked_id: userId });
+      if (!error) {
+        setIsBlocked(true);
+        // ブロックした相手を自分がフォローしていた場合は解除しておく
+        if (isFollowing) {
+          const { error: unfollowError } = await supabase
+            .from("follows")
+            .delete()
+            .eq("follower_id", user.id)
+            .eq("followed_id", userId);
+          if (!unfollowError) setIsFollowing(false);
+        }
+      }
+    }
+    setBlockBusy(false);
   }
 
   if (loading) {
@@ -3365,8 +3690,13 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
               フォロー中 {profile.following_count ?? 0}
             </button>
           </div>
+          {profile.is_deleted && (
+            <div className="text-xs mt-1" style={{ color: C.muted }}>
+              このアカウントは削除されています
+            </div>
+          )}
         </div>
-        {isOwnProfile ? (
+        {profile.is_deleted ? null : isOwnProfile ? (
           !editing && (
             <button
               type="button"
@@ -3379,6 +3709,32 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
           )
         ) : (
           <div className="flex flex-col items-end gap-1 shrink-0">
+            {!isBlocked && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isGuest) {
+                    setShowGuestNotice(true);
+                    return;
+                  }
+                  handleToggleFollow();
+                }}
+                disabled={followBusy}
+                className="px-4 py-2 rounded-lg text-sm font-medium"
+                style={{
+                  background: isFollowing ? "transparent" : C.amber,
+                  border: isFollowing ? `1px solid ${C.border}` : "none",
+                  color: isFollowing ? C.text : C.bg,
+                }}
+              >
+                {isFollowing ? "フォロー中" : "フォローする"}
+              </button>
+            )}
+            {showGuestNotice && (
+              <div className="text-xs" style={{ color: C.muted }}>
+                フォローするには本登録が必要です
+              </div>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -3386,23 +3742,14 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
                   setShowGuestNotice(true);
                   return;
                 }
-                handleToggleFollow();
+                handleToggleBlock();
               }}
-              disabled={followBusy}
-              className="px-4 py-2 rounded-lg text-sm font-medium"
-              style={{
-                background: isFollowing ? "transparent" : C.amber,
-                border: isFollowing ? `1px solid ${C.border}` : "none",
-                color: isFollowing ? C.text : C.bg,
-              }}
+              disabled={blockBusy}
+              className="flex items-center gap-1 text-xs font-medium"
+              style={{ color: isBlocked ? C.muted : C.rose }}
             >
-              {isFollowing ? "フォロー中" : "フォローする"}
+              <Shield size={12} /> {isBlocked ? "ブロック解除" : "ブロックする"}
             </button>
-            {showGuestNotice && (
-              <div className="text-xs" style={{ color: C.muted }}>
-                フォローするには本登録が必要です
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -3883,6 +4230,7 @@ const NOTIFICATION_TEXT = {
   like: (n) => `${n.actor?.display_name ?? "誰か"}さんがあなたの投稿にいいねしました`,
   comment: (n) => `${n.actor?.display_name ?? "誰か"}さんがあなたの投稿にコメントしました`,
   follow: (n) => `${n.actor?.display_name ?? "誰か"}さんにフォローされました`,
+  mention: (n) => `${n.actor?.display_name ?? "誰か"}さんがあなたをメンションしました`,
   announcement: (n) => n.message ?? "運営からのお知らせ",
 };
 
@@ -3890,6 +4238,7 @@ const NOTIFICATION_ICONS = {
   like: Heart,
   comment: MessageCircle,
   follow: User,
+  mention: AtSign,
   announcement: Sparkles,
 };
 
@@ -3957,6 +4306,76 @@ function NotificationsPanel({ notifications, loading, onClose, onSelect }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DeleteAccountSection() {
+  const { user } = useAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [status, setStatus] = useState(null); // null | "deleting" | "error"
+  const [error, setError] = useState("");
+
+  async function handleDelete() {
+    if (!user) return;
+    setStatus("deleting");
+    setError("");
+    const supabase = createClient();
+    const { error: rpcError } = await supabase.rpc("delete_account");
+    if (rpcError) {
+      setStatus("error");
+      setError(rpcError.message);
+      return;
+    }
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  }
+
+  return (
+    <div className="p-4 rounded-xl mb-4" style={{ background: C.panel, border: `1px solid ${C.rose}` }}>
+      <div className="text-sm font-medium mb-1" style={{ color: C.rose }}>
+        アカウントを削除する
+      </div>
+      <div className="text-xs mb-3" style={{ color: C.muted }}>
+        アカウントを削除すると、二度とログインできなくなります。過去の投稿・コメント・いいねはコミュニティの記録として残りますが、投稿者名は「削除済みユーザー」と表示されます。この操作は取り消せません。
+      </div>
+      {status === "error" && (
+        <div className="text-xs mb-2" style={{ color: C.rose }}>
+          {error}
+        </div>
+      )}
+      {confirming ? (
+        <div className="flex items-center gap-3">
+          <span className="text-xs">本当に削除しますか?</span>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={status === "deleting"}
+            className="text-xs font-medium"
+            style={{ color: C.rose }}
+          >
+            {status === "deleting" ? "削除中..." : "はい、削除する"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            disabled={status === "deleting"}
+            className="text-xs"
+            style={{ color: C.muted }}
+          >
+            いいえ
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="flex items-center gap-1 text-xs font-medium"
+          style={{ color: C.rose }}
+        >
+          <Trash2 size={12} /> アカウントを削除する
+        </button>
+      )}
     </div>
   );
 }
@@ -4066,7 +4485,9 @@ function ProfileEditForm({ profile, refreshProfile, onCancel, onSaved }) {
       setErrorMsg(
         error.code === "23505"
           ? "このユーザー名は既に使われています。別の名前をお試しください。"
-          : error.message,
+          : error.code === "23514"
+            ? "ユーザー名にスペースは使用できません。"
+            : error.message,
       );
       return;
     }
@@ -4079,8 +4500,8 @@ function ProfileEditForm({ profile, refreshProfile, onCancel, onSaved }) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
       <input
         value={displayName}
-        onChange={(e) => setDisplayName(e.target.value)}
-        placeholder="ユーザー名"
+        onChange={(e) => setDisplayName(e.target.value.replace(/\s/g, ""))}
+        placeholder="ユーザー名 (スペース不可)"
         required
         maxLength={20}
         className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg"
@@ -4328,10 +4749,10 @@ function PostForm({ onCancel, onSubmit, status, error, initialValues, submitLabe
           style={{ border: `1px solid ${C.border}`, color: C.text }}
         />
       )}
-      <textarea
+      <MentionTextarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="コメント(任意)"
+        placeholder="コメント(任意, 「@ユーザー名」でメンション)"
         rows={3}
         className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg resize-none"
         style={{ border: `1px solid ${C.border}`, color: C.text }}
@@ -4832,10 +5253,10 @@ function MidiPatchPostForm({
         </div>
       )}
 
-      <textarea
+      <MentionTextarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="コメント(任意)"
+        placeholder="コメント(任意, 「@ユーザー名」でメンション)"
         rows={3}
         className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg resize-none"
         style={inputStyle}
@@ -5056,10 +5477,10 @@ function NewThreadForm({ onCancel, onSubmit, status, error, initialValues, submi
         className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg"
         style={{ border: `1px solid ${C.border}`, color: C.text }}
       />
-      <textarea
+      <MentionTextarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="本文(任意)"
+        placeholder="本文(任意, 「@ユーザー名」でメンション)"
         rows={4}
         className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg resize-none"
         style={{ border: `1px solid ${C.border}`, color: C.text }}
@@ -5099,7 +5520,7 @@ function NewThreadForm({ onCancel, onSubmit, status, error, initialValues, submi
   );
 }
 
-function ThreadRow({ t, color, onOpen, interactive, onLikeToggle, onOpenProfile }) {
+function ThreadRow({ t, color, onOpen, interactive, onLikeToggle, onBookmarkToggle, onOpenProfile }) {
   const Icon = THREAD_TYPES[t.type].icon;
   return (
     <div
@@ -5133,7 +5554,10 @@ function ThreadRow({ t, color, onOpen, interactive, onLikeToggle, onOpenProfile 
         )}
         <div className="flex items-center gap-3">
           {interactive ? (
-            <LikeButton postId={t.id} liked={t.liked} count={t.likes} onToggled={onLikeToggle} size={14} />
+            <>
+              <LikeButton postId={t.id} liked={t.liked} count={t.likes} onToggled={onLikeToggle} size={14} />
+              <BookmarkButton postId={t.id} bookmarked={t.bookmarked} onToggled={onBookmarkToggle} size={14} />
+            </>
           ) : (
             <span className="text-sm flex items-center gap-1" style={{ color: C.muted }}>
               <Heart size={14} /> {t.likes}
