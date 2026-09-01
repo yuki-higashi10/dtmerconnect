@@ -32,6 +32,7 @@ import {
   Menu,
   Link2,
   Sparkles,
+  Bell,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -711,6 +712,41 @@ function useSearchablePosts() {
   return { posts, setPosts, loading };
 }
 
+// 通知(いいね/コメント/フォロー/運営からのお知らせ)
+function useNotifications() {
+  const { user, isGuest } = useAuth();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  function load() {
+    if (!user || isGuest) {
+      return Promise.resolve().then(() => {
+        setNotifications([]);
+        setLoading(false);
+      });
+    }
+    const supabase = createClient();
+    return supabase
+      .from("notifications")
+      .select("id, type, post_id, message, is_read, created_at, actor:users!actor_id(id, display_name, avatar_url)")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        setNotifications(data ?? []);
+        setLoading(false);
+      });
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isGuest]);
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  return { notifications, setNotifications, unreadCount, loading, reload: load };
+}
+
 function extractPatchesStoragePath(url) {
   const marker = "/object/public/patches/";
   const idx = url.indexOf(marker);
@@ -782,6 +818,8 @@ export default function App() {
   const followingFeed = useFollowingFeed();
   const searchState = useSearchablePosts();
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const notificationsState = useNotifications();
+  const [showNotifications, setShowNotifications] = useState(false);
   const [showNewTrackForm, setShowNewTrackForm] = useState(false);
   const [trackPostStatus, setTrackPostStatus] = useState(null);
   const [trackPostError, setTrackPostError] = useState("");
@@ -887,6 +925,30 @@ export default function App() {
       });
   }, []);
 
+  // 投稿IDから投稿を取得して詳細モーダルを開く(共有リンク・通知タップ共通)
+  function openPostById(postId) {
+    const supabase = createClient();
+    return supabase
+      .from("posts")
+      .select(FULL_POST_SELECT)
+      .eq("id", postId)
+      .maybeSingle()
+      .then(async ({ data }) => {
+        if (!data) return;
+        let likedIds = new Set();
+        if (user && !isGuest) {
+          const { data: likedRows } = await supabase
+            .from("likes")
+            .select("post_id")
+            .eq("user_id", user.id)
+            .eq("post_id", postId);
+          likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
+        }
+        const mapped = mapMyPost(data, likedIds);
+        openDetail(mapped.kind, mapped.data, true);
+      });
+  }
+
   // URLの ?post=<id> を検知して、その投稿を直接開く(共有リンク経由のアクセス)
   // ?upgraded=1 (本登録完了直後のリダイレクト) を検知して、おすすめユーザーを表示する
   useEffect(() => {
@@ -896,26 +958,7 @@ export default function App() {
     const justUpgraded = params.get("upgraded") === "1";
 
     if (sharedPostId) {
-      const supabase = createClient();
-      supabase
-        .from("posts")
-        .select(FULL_POST_SELECT)
-        .eq("id", sharedPostId)
-        .maybeSingle()
-        .then(async ({ data }) => {
-          if (!data) return;
-          let likedIds = new Set();
-          if (user && !isGuest) {
-            const { data: likedRows } = await supabase
-              .from("likes")
-              .select("post_id")
-              .eq("user_id", user.id)
-              .eq("post_id", sharedPostId);
-            likedIds = new Set((likedRows ?? []).map((r) => r.post_id));
-          }
-          const mapped = mapMyPost(data, likedIds);
-          openDetail(mapped.kind, mapped.data, true);
-        });
+      openPostById(sharedPostId);
     }
 
     if (justUpgraded && !isGuest) {
@@ -927,6 +970,20 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
+
+  function handleNotificationClick(n) {
+    if (!n.is_read) {
+      const supabase = createClient();
+      supabase.from("notifications").update({ is_read: true }).eq("id", n.id).then(() => {});
+      notificationsState.setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+    }
+    setShowNotifications(false);
+    if ((n.type === "like" || n.type === "comment") && n.post_id) {
+      openPostById(n.post_id);
+    } else if (n.type === "follow" && n.actor?.id) {
+      openProfile(n.actor.id);
+    }
+  }
 
   function loadChannelThreads(channelKey, tab, page) {
     const dawChannelId = dawChannelIds[channelKey];
@@ -1427,6 +1484,27 @@ export default function App() {
 
   const channelColor = (id) => CHANNELS.find((c) => c.id === id)?.color ?? C.muted;
 
+  const notificationBell = () =>
+    !isGuest && (
+      <button
+        type="button"
+        onClick={() => setShowNotifications(true)}
+        className="relative shrink-0"
+        style={{ color: C.text }}
+        aria-label="通知"
+      >
+        <Bell size={20} />
+        {notificationsState.unreadCount > 0 && (
+          <span
+            className="absolute -top-1.5 -right-1.5 flex items-center justify-center text-[10px] font-medium rounded-full"
+            style={{ minWidth: 16, height: 16, padding: "0 3px", background: C.rose, color: "#fff" }}
+          >
+            {notificationsState.unreadCount > 9 ? "9+" : notificationsState.unreadCount}
+          </span>
+        )}
+      </button>
+    );
+
   const navItem = (id, icon, label, onClick) => {
     const Icon = icon;
     const active = view === id;
@@ -1533,26 +1611,29 @@ export default function App() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="DTMer Connect" style={{ height: 28, width: "auto" }} />
         </div>
-        {isGuest ? (
-          <button
-            type="button"
-            onClick={() => setView("mypage")}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium"
-            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
-          >
-            ログイン
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={signOutAndBecomeGuest}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
-            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
-          >
-            <LogOut size={13} />
-            ログアウト
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {notificationBell()}
+          {isGuest ? (
+            <button
+              type="button"
+              onClick={() => setView("mypage")}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+            >
+              ログイン
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={signOutAndBecomeGuest}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+            >
+              <LogOut size={13} />
+              ログアウト
+            </button>
+          )}
+        </div>
       </header>
 
       {/* mobile menu drawer */}
@@ -1584,9 +1665,10 @@ export default function App() {
       <div className="flex pt-14 md:pt-0" style={{ paddingBottom: nowPlaying ? 84 : 0 }}>
         {/* sidebar (desktop) */}
         <aside className="hidden md:flex flex-col w-56 shrink-0 p-4 gap-1 sticky top-0" style={{ height: "100vh" }}>
-          <div className="flex items-center mb-4 px-1">
+          <div className="flex items-center justify-between mb-4 px-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.svg" alt="DTMer Connect" style={{ height: 44, width: "auto" }} />
+            {notificationBell()}
           </div>
 
           {renderSidebarNav()}
@@ -2571,6 +2653,15 @@ export default function App() {
       {showRecommendedUsers && (
         <RecommendedUsersModal onClose={() => setShowRecommendedUsers(false)} onOpenProfile={openProfile} />
       )}
+
+      {showNotifications && (
+        <NotificationsPanel
+          notifications={notificationsState.notifications}
+          loading={notificationsState.loading}
+          onClose={() => setShowNotifications(false)}
+          onSelect={handleNotificationClick}
+        />
+      )}
     </div>
   );
 }
@@ -3469,6 +3560,9 @@ function AdminView() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
+  const [announcementText, setAnnouncementText] = useState("");
+  const [announcementStatus, setAnnouncementStatus] = useState(null); // null | "sending" | "sent" | "error"
+  const [announcementError, setAnnouncementError] = useState("");
 
   function load() {
     const supabase = createClient();
@@ -3517,6 +3611,23 @@ function AdminView() {
     setBusyId(null);
   }
 
+  async function handleSendAnnouncement(e) {
+    e.preventDefault();
+    const message = announcementText.trim();
+    if (!message) return;
+    setAnnouncementStatus("sending");
+    setAnnouncementError("");
+    const supabase = createClient();
+    const { error: rpcError } = await supabase.rpc("send_announcement_notification", { p_message: message });
+    if (rpcError) {
+      setAnnouncementStatus("error");
+      setAnnouncementError(rpcError.message);
+      return;
+    }
+    setAnnouncementStatus("sent");
+    setAnnouncementText("");
+  }
+
   if (loading) {
     return (
       <div className="text-sm" style={{ color: C.muted }}>
@@ -3528,6 +3639,43 @@ function AdminView() {
   return (
     <div>
       <h1 className="display-font text-xl font-bold mb-4">管理画面</h1>
+
+      <div className="p-4 rounded-xl mb-6" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+        <div className="text-sm font-medium mb-2">お知らせを送信</div>
+        <div className="text-xs mb-2" style={{ color: C.muted }}>
+          送信すると、登録済みの全ユーザーに通知が届きます。
+        </div>
+        <form onSubmit={handleSendAnnouncement} className="flex flex-col gap-2">
+          <textarea
+            value={announcementText}
+            onChange={(e) => setAnnouncementText(e.target.value)}
+            placeholder="お知らせ内容を入力"
+            rows={3}
+            maxLength={500}
+            className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg resize-none"
+            style={{ border: `1px solid ${C.border}`, color: C.text }}
+          />
+          {announcementStatus === "error" && (
+            <div className="text-xs" style={{ color: C.rose }}>
+              {announcementError}
+            </div>
+          )}
+          {announcementStatus === "sent" && (
+            <div className="text-xs" style={{ color: C.teal }}>
+              送信しました
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={announcementStatus === "sending" || !announcementText.trim()}
+            className="self-end px-4 py-2 rounded-lg text-sm font-medium"
+            style={{ background: C.amber, color: C.bg }}
+          >
+            {announcementStatus === "sending" ? "送信中..." : "送信する"}
+          </button>
+        </form>
+      </div>
+
       {error && (
         <div className="text-sm mb-3" style={{ color: C.rose }}>
           {error}
@@ -3726,6 +3874,88 @@ function RecommendedUsersModal({ onClose, onOpenProfile }) {
         >
           スキップ
         </button>
+      </div>
+    </div>
+  );
+}
+
+const NOTIFICATION_TEXT = {
+  like: (n) => `${n.actor?.display_name ?? "誰か"}さんがあなたの投稿にいいねしました`,
+  comment: (n) => `${n.actor?.display_name ?? "誰か"}さんがあなたの投稿にコメントしました`,
+  follow: (n) => `${n.actor?.display_name ?? "誰か"}さんにフォローされました`,
+  announcement: (n) => n.message ?? "運営からのお知らせ",
+};
+
+const NOTIFICATION_ICONS = {
+  like: Heart,
+  comment: MessageCircle,
+  follow: User,
+  announcement: Sparkles,
+};
+
+function NotificationsPanel({ notifications, loading, onClose, onSelect }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:pt-20"
+      style={{ background: "rgba(0,0,0,0.6)" }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full sm:max-w-md rounded-xl p-4 flex flex-col"
+        style={{ background: C.panel, border: `1px solid ${C.border}`, maxHeight: "80vh" }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-semibold flex items-center gap-1.5">
+            <Bell size={16} />
+            通知
+          </div>
+          <button type="button" onClick={onClose} style={{ color: C.muted }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
+          {loading ? (
+            <div className="text-sm py-4 text-center" style={{ color: C.muted }}>
+              読み込み中...
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="text-sm py-4 text-center" style={{ color: C.muted }}>
+              通知はありません
+            </div>
+          ) : (
+            notifications.map((n) => {
+              const Icon = NOTIFICATION_ICONS[n.type] ?? Bell;
+              return (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => onSelect(n)}
+                  className="flex items-start gap-3 p-3 rounded-xl text-left"
+                  style={{ background: n.is_read ? "transparent" : C.bg, border: `1px solid ${C.border}` }}
+                >
+                  <div className="mt-0.5 shrink-0" style={{ color: n.is_read ? C.muted : C.amber }}>
+                    <Icon size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm" style={{ color: n.is_read ? C.muted : C.text }}>
+                      {NOTIFICATION_TEXT[n.type]?.(n) ?? ""}
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: C.muted }}>
+                      {new Date(n.created_at).toLocaleString("ja-JP")}
+                    </div>
+                  </div>
+                  {!n.is_read && (
+                    <span
+                      className="shrink-0"
+                      style={{ width: 8, height: 8, borderRadius: 999, background: C.rose, marginTop: 4 }}
+                    />
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
