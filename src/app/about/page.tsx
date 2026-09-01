@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import LegalPageLayout, { LegalSection } from "@/components/LegalPageLayout";
+import ContactForm from "@/components/ContactForm";
 
 export const metadata: Metadata = {
   title: "運営者情報 | DTMer Connect",
@@ -21,6 +22,10 @@ export default function AboutPage() {
           本サービスに関するお問い合わせ、著作権侵害やその他の問題のご報告は、下記の連絡先までお願いいたします。
         </p>
         <p>メールアドレス: contact@example.com(仮の連絡先です。正式な連絡先に差し替え予定です)</p>
+      </LegalSection>
+
+      <LegalSection heading="お問い合わせフォーム">
+        <ContactForm />
       </LegalSection>
 
       <LegalSection heading="サービス内容">
