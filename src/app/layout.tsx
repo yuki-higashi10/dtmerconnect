@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
 import InstallPrompt from "@/components/InstallPrompt";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
-import PushPermissionManager from "@/components/PushPermissionManager";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -54,10 +53,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>
-          {children}
-          <PushPermissionManager />
-        </AuthProvider>
+        <AuthProvider>{children}</AuthProvider>
         <ServiceWorkerRegister />
         <InstallPrompt />
       </body>

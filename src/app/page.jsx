@@ -38,12 +38,6 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
-import {
-  isPushSupported,
-  hasPushBeenPrompted,
-  markPushPrompted,
-  requestPushPermissionAndSubscribe,
-} from "@/lib/webPush";
 import { recordEngagementAction } from "@/lib/pwaEngagement";
 
 const C = {
@@ -1137,22 +1131,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
 
-  function handleOpenNotifications() {
-    setShowNotifications(true);
-    if (
-      !isGuest &&
-      user &&
-      isPushSupported() &&
-      !hasPushBeenPrompted() &&
-      typeof Notification !== "undefined" &&
-      Notification.permission === "default"
-    ) {
-      markPushPrompted();
-      const supabase = createClient();
-      requestPushPermissionAndSubscribe(supabase, user.id);
-    }
-  }
-
   function handleNotificationClick(n) {
     if (!n.is_read) {
       const supabase = createClient();
@@ -1672,7 +1650,7 @@ export default function App() {
     !isGuest && (
       <button
         type="button"
-        onClick={handleOpenNotifications}
+        onClick={() => setShowNotifications(true)}
         className="relative shrink-0"
         style={{ color: C.text }}
         aria-label="通知"
@@ -2902,7 +2880,6 @@ export default function App() {
           loading={notificationsState.loading}
           onClose={() => setShowNotifications(false)}
           onSelect={handleNotificationClick}
-          userId={user?.id}
         />
       )}
     </div>
@@ -4274,19 +4251,7 @@ const NOTIFICATION_ICONS = {
   announcement: Sparkles,
 };
 
-function NotificationsPanel({ notifications, loading, onClose, onSelect, userId }) {
-  const [pushState, setPushState] = useState(() =>
-    isPushSupported() && typeof Notification !== "undefined" ? Notification.permission : "unsupported",
-  );
-
-  async function handleEnablePush() {
-    if (!userId) return;
-    markPushPrompted();
-    const supabase = createClient();
-    const ok = await requestPushPermissionAndSubscribe(supabase, userId);
-    setPushState(ok ? "granted" : Notification.permission);
-  }
-
+function NotificationsPanel({ notifications, loading, onClose, onSelect }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:pt-20"
@@ -4307,21 +4272,6 @@ function NotificationsPanel({ notifications, loading, onClose, onSelect, userId 
             <X size={18} />
           </button>
         </div>
-        {pushState === "default" && (
-          <button
-            type="button"
-            onClick={handleEnablePush}
-            className="flex items-center justify-between gap-2 p-3 rounded-xl text-left mb-2"
-            style={{ background: C.bg, border: `1px solid ${C.border}` }}
-          >
-            <span className="text-sm" style={{ color: C.text }}>
-              スマホへのプッシュ通知を有効にしますか?
-            </span>
-            <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-lg" style={{ background: C.amber, color: C.bg }}>
-              許可する
-            </span>
-          </button>
-        )}
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
           {loading ? (
             <div className="text-sm py-4 text-center" style={{ color: C.muted }}>
