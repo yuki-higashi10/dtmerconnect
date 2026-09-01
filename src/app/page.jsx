@@ -2322,7 +2322,68 @@ export default function App() {
                   まだ投稿はありません
                 </div>
               ) : (
-                <PostLinkList posts={myPosts} onOpenPost={openDetail} />
+                (() => {
+                  const myThreads = myPosts.filter((mp) => mp.kind === "thread");
+                  const myTracks = myPosts.filter((mp) => mp.kind === "track");
+                  const myPatches = myPosts.filter((mp) => mp.kind === "patch");
+                  const sumLikes = (items) => items.reduce((sum, mp) => sum + (mp.data.likes ?? 0), 0);
+                  const sumComments = (items) => items.reduce((sum, mp) => sum + (mp.data.comments ?? 0), 0);
+
+                  return (
+                    <div className="flex flex-col gap-6">
+                      <MyPostsRow
+                        title="DAW別コミュニティ/全般への投稿"
+                        count={myThreads.length}
+                        likes={sumLikes(myThreads)}
+                        comments={sumComments(myThreads)}
+                      >
+                        {myThreads.map((mp) => (
+                          <ThreadCard
+                            key={mp.data.id}
+                            t={mp.data}
+                            color={C.muted}
+                            onOpen={() => openDetail("thread", mp.data, true)}
+                            onOpenProfile={openProfile}
+                          />
+                        ))}
+                      </MyPostsRow>
+
+                      <MyPostsRow
+                        title="楽曲投稿"
+                        count={myTracks.length}
+                        likes={sumLikes(myTracks)}
+                        comments={sumComments(myTracks)}
+                      >
+                        {myTracks.map((mp) => (
+                          <TrackCard
+                            key={mp.data.id}
+                            tr={mp.data}
+                            onPlay={() => playTrack(mp.data, C.teal)}
+                            onOpen={() => openDetail("track", mp.data, true)}
+                            onOpenProfile={openProfile}
+                          />
+                        ))}
+                      </MyPostsRow>
+
+                      <MyPostsRow
+                        title="MIDI/パッチ共有"
+                        count={myPatches.length}
+                        likes={sumLikes(myPatches)}
+                        comments={sumComments(myPatches)}
+                      >
+                        {myPatches.map((mp) => (
+                          <PatchCard
+                            key={mp.data.id}
+                            p={mp.data}
+                            onPlay={() => play(mp.data, C.amber)}
+                            onOpen={() => openDetail("patch", mp.data, true)}
+                            onOpenProfile={openProfile}
+                          />
+                        ))}
+                      </MyPostsRow>
+                    </div>
+                  );
+                })()
               )}
 
               {!isGuest && (
@@ -2907,6 +2968,32 @@ function Row({ title, children }) {
     <div>
       <div className="text-sm font-medium mb-2">{title}</div>
       <div className="flex gap-3 overflow-x-auto row-scroll pb-1">{children}</div>
+    </div>
+  );
+}
+
+// マイページ「自分の投稿」用: カテゴリ見出しに合計いいね・コメント数を添えた横スクロール行
+function MyPostsRow({ title, count, likes, comments, children }) {
+  return (
+    <div>
+      <div className="text-sm font-medium mb-2 flex items-center gap-2 flex-wrap">
+        <span>{title}</span>
+        <span className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
+          <span className="flex items-center gap-1">
+            <Heart size={12} /> {likes}
+          </span>
+          <span className="flex items-center gap-1">
+            <MessageCircle size={12} /> {comments}
+          </span>
+        </span>
+      </div>
+      {count === 0 ? (
+        <div className="text-sm" style={{ color: C.muted }}>
+          まだ投稿がありません
+        </div>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto row-scroll pb-1">{children}</div>
+      )}
     </div>
   );
 }
