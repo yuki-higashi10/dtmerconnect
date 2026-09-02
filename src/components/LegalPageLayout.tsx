@@ -9,7 +9,15 @@ const C = {
   amber: "#e8a33d",
 };
 
-export default function LegalPageLayout({ title, children }: { title: string; children: ReactNode }) {
+export default function LegalPageLayout({
+  title,
+  children,
+  enactedDate = "2026年8月31日",
+}: {
+  title: string;
+  children: ReactNode;
+  enactedDate?: string;
+}) {
   return (
     <div style={{ background: C.bg, color: C.text, minHeight: "100vh" }} className="px-4 py-8 sm:px-8">
       <div className="max-w-2xl mx-auto">
@@ -19,7 +27,7 @@ export default function LegalPageLayout({ title, children }: { title: string; ch
         <h1 className="text-2xl font-bold mt-4 mb-6">{title}</h1>
         <div className="flex flex-col gap-6 text-sm leading-relaxed pb-16">{children}</div>
         <div className="text-xs mt-4" style={{ color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-          制定日: 2026年8月31日
+          制定日: {enactedDate}
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <LegalPageLayout title="利用規約">
+    <LegalPageLayout title="利用規約" enactedDate="2026年9月3日">
       <LegalSection heading="第1条(適用)">
         <p>
           この利用規約(以下「本規約」といいます)は、DTMer Connect運営事務局(以下「当運営」といいます)が提供するコミュニティサービス「DTMer
@@ -56,6 +56,9 @@ export default function TermsPage() {
         </p>
         <p>
           MIDI/パッチ共有機能に投稿されたコンテンツは、他の利用者が自由に利用できるものとして公開されます。投稿する際は、公開してよい内容であることをご自身でご確認ください。
+        </p>
+        <p>
+          利用者が本サービスを退会した場合、当該利用者が投稿したコンテンツ(スレッド、コメント、楽曲、MIDI/パッチ等)は、本サービス上のすべての公開画面において表示されなくなります。
         </p>
       </LegalSection>
 
