@@ -2021,6 +2021,11 @@ export default function App() {
             <PianoRoll seed={detail.data.id + detail.data.title} color={detail.kind === "patch" ? C.amber : C.teal} height={64} />
           )
         )}
+        {detail.kind === "patch" && !detail.data.attachments?.some((a) => a.file_type === "audio_preview") && (
+          <div className="text-xs mt-2" style={{ color: C.muted }}>
+            サンプルなし(試聴用音源は添付されていません)
+          </div>
+        )}
         {(detail.data.bpm ||
           detail.data.key ||
           detail.data.usedDaw ||
@@ -3252,6 +3257,7 @@ function MyPostsRow({ title, count, likes, comments, children }) {
 }
 
 function PatchCard({ p, onPlay, onOpen, onOpenProfile }) {
+  const hasSample = p.attachments?.some((a) => a.file_type === "audio_preview");
   return (
     <div className="shrink-0 w-44 p-3 rounded-xl cursor-pointer" style={{ background: C.panel, border: `1px solid ${C.border}` }} onClick={onOpen}>
       <div className="relative mb-2">
@@ -3265,16 +3271,25 @@ function PatchCard({ p, onPlay, onOpen, onOpenProfile }) {
         ) : (
           <PianoRoll seed={p.id + p.title} color={C.amber} height={80} />
         )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onPlay();
-          }}
-          className="absolute bottom-1 right-1 flex items-center justify-center rounded-full"
-          style={{ width: 30, height: 30, background: C.amber, color: C.bg }}
-        >
-          <Play size={13} />
-        </button>
+        {hasSample ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlay();
+            }}
+            className="absolute bottom-1 right-1 flex items-center justify-center rounded-full"
+            style={{ width: 30, height: 30, background: C.amber, color: C.bg }}
+          >
+            <Play size={13} />
+          </button>
+        ) : (
+          <span
+            className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-full text-[10px]"
+            style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}
+          >
+            サンプルなし
+          </span>
+        )}
       </div>
       <div className="text-sm truncate">{p.title}</div>
       <AuthorLine
