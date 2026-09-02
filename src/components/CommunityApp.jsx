@@ -4853,7 +4853,7 @@ function DeleteAccountSection() {
         アカウントを削除する
       </div>
       <div className="text-xs mb-3" style={{ color: C.muted }}>
-        アカウントを削除すると、二度とログインできなくなります。過去の投稿・コメント・いいねはコミュニティの記録として残りますが、投稿者名は「削除済みユーザー」と表示されます。この操作は取り消せません。
+        アカウントを削除すると、二度とログインできなくなります。これまで投稿したスレッド・楽曲・MIDI/パッチ・コメントはすべて表示されなくなります。この操作は取り消せません。
       </div>
       {status === "error" && (
         <div className="text-xs mb-2" style={{ color: C.rose }}>
