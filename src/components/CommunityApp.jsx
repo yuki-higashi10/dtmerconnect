@@ -3133,7 +3133,7 @@ export default function App() {
 
       {/* mobile bottom tabs */}
       <div
-        className="md:hidden fixed left-0 right-0 flex justify-around py-2 z-20"
+        className="md:hidden fixed left-0 right-0 flex justify-around py-3 z-20"
         style={{ bottom: nowPlaying ? 76 : 0, background: C.panel, borderTop: `1px solid ${C.border}` }}
       >
         {[
@@ -3146,7 +3146,7 @@ export default function App() {
           <button
             key={n.id}
             onClick={() => setView(n.id)}
-            className="p-2.5"
+            className="px-3 py-3"
             style={{ color: view === n.id ? C.text : C.muted }}
           >
             <n.icon size={24} />
