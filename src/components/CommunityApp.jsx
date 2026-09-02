@@ -3139,16 +3139,17 @@ export default function App() {
         {[
           { id: "home", icon: Home },
           { id: "search", icon: Search },
+          { id: "tracks", icon: Music2 },
           { id: "patches", icon: Download },
           { id: "mypage", icon: User },
         ].map((n) => (
           <button
             key={n.id}
             onClick={() => setView(n.id)}
-            className="p-3"
+            className="p-2.5"
             style={{ color: view === n.id ? C.text : C.muted }}
           >
-            <n.icon size={28} />
+            <n.icon size={24} />
           </button>
         ))}
       </div>
