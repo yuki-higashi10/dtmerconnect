@@ -951,6 +951,37 @@ export default function App() {
   const followingFeed = useFollowingFeed();
   const searchState = useSearchablePosts();
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [searchTab, setSearchTab] = useState("posts"); // "posts" | "users"
+  const [userSearchResults, setUserSearchResults] = useState([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+
+  // ユーザー検索(表示名・自己紹介・活動内容で検索)
+  useEffect(() => {
+    const q = globalSearchQuery.trim();
+    if (searchTab !== "users" || !q) {
+      Promise.resolve().then(() => {
+        setUserSearchResults([]);
+        setUserSearchLoading(false);
+      });
+      return;
+    }
+    Promise.resolve().then(() => setUserSearchLoading(true));
+    const supabase = createClient();
+    const safeQ = q.replace(/[,()]/g, " ").trim();
+    const handle = setTimeout(() => {
+      supabase
+        .from("users")
+        .select("id, display_name, avatar_url, total_likes_received, bio, activity_area, is_admin")
+        .eq("is_guest", false)
+        .or(`display_name.ilike.%${safeQ}%,bio.ilike.%${safeQ}%,activity_area.ilike.%${safeQ}%`)
+        .limit(30)
+        .then(({ data }) => {
+          setUserSearchResults(data ?? []);
+          setUserSearchLoading(false);
+        });
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [globalSearchQuery, searchTab]);
 
   // ホーム画面「今週の人気MIDI/パッチ」「新着Tips」「楽曲投稿の新着」用(実データから算出)
   const homePopularPatches = useMemo(() => {
@@ -2467,54 +2498,104 @@ export default function App() {
             return (
               <div>
                 <h1 className="display-font text-xl font-bold mb-3">検索</h1>
+
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={() => setSearchTab("posts")}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium"
+                    style={{
+                      background: searchTab === "posts" ? C.amber : "transparent",
+                      color: searchTab === "posts" ? C.bg : C.text,
+                      border: searchTab === "posts" ? "none" : `1px solid ${C.border}`,
+                    }}
+                  >
+                    投稿
+                  </button>
+                  <button
+                    onClick={() => setSearchTab("users")}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium"
+                    style={{
+                      background: searchTab === "users" ? C.amber : "transparent",
+                      color: searchTab === "users" ? C.bg : C.text,
+                      border: searchTab === "users" ? "none" : `1px solid ${C.border}`,
+                    }}
+                  >
+                    ユーザー
+                  </button>
+                </div>
+
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
                   <Search size={15} color={C.muted} />
                   <input
                     value={globalSearchQuery}
                     onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                    placeholder="タイトル・タグ・ジャンルで検索"
+                    placeholder={searchTab === "users" ? "ユーザー名・活動内容で検索" : "タイトル・タグ・ジャンルで検索"}
                     className="bg-transparent outline-none text-sm flex-1"
                     style={{ color: C.text }}
                   />
                 </div>
 
-                {q && (
-                  <div className="flex flex-col gap-2 mb-6">
-                    {searchState.loading ? (
+                {searchTab === "posts" ? (
+                  <>
+                    {q && (
+                      <div className="flex flex-col gap-2 mb-6">
+                        {searchState.loading ? (
+                          <div className="text-sm" style={{ color: C.muted }}>
+                            読み込み中...
+                          </div>
+                        ) : searchResults.length === 0 ? (
+                          <div className="text-sm" style={{ color: C.muted }}>
+                            「{q}」に一致する投稿が見つかりませんでした
+                          </div>
+                        ) : (
+                          searchResults.map((item) => (
+                            <SearchResultRow
+                              key={`${item.kind}-${item.data.id}`}
+                              item={item}
+                              onOpen={() => openDetail(item.kind, item.data, true)}
+                              onOpenProfile={openProfile}
+                            />
+                          ))
+                        )}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {CHANNELS.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => openChannel(c.id)}
+                          className="p-4 rounded-xl text-left"
+                          style={{ background: C.panel, border: `1px solid ${C.border}` }}
+                        >
+                          <span style={{ color: c.color }} className="font-medium text-sm">
+                            {c.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {!q ? (
+                      <div className="text-sm" style={{ color: C.muted }}>
+                        ユーザー名や活動内容で検索できます
+                      </div>
+                    ) : userSearchLoading ? (
                       <div className="text-sm" style={{ color: C.muted }}>
                         読み込み中...
                       </div>
-                    ) : searchResults.length === 0 ? (
+                    ) : userSearchResults.length === 0 ? (
                       <div className="text-sm" style={{ color: C.muted }}>
-                        「{q}」に一致する投稿が見つかりませんでした
+                        「{q}」に一致するユーザーが見つかりませんでした
                       </div>
                     ) : (
-                      searchResults.map((item) => (
-                        <SearchResultRow
-                          key={`${item.kind}-${item.data.id}`}
-                          item={item}
-                          onOpen={() => openDetail(item.kind, item.data, true)}
-                          onOpenProfile={openProfile}
-                        />
+                      userSearchResults.map((u) => (
+                        <UserSearchResultCard key={u.id} u={u} onOpen={() => openProfile(u.id)} />
                       ))
                     )}
                   </div>
                 )}
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {CHANNELS.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => openChannel(c.id)}
-                      className="p-4 rounded-xl text-left"
-                      style={{ background: C.panel, border: `1px solid ${C.border}` }}
-                    >
-                      <span style={{ color: c.color }} className="font-medium text-sm">
-                        {c.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
               </div>
             );
           })()}
@@ -3342,6 +3423,34 @@ function SearchResultRow({ item, onOpen, onOpenProfile }) {
         isAdmin={data.authorIsAdmin}
       />
     </div>
+  );
+}
+
+function UserSearchResultCard({ u, onOpen }) {
+  const badge = badgeFor(u.total_likes_received ?? 0);
+  const activity = u.bio || u.activity_area;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full flex items-center gap-3 p-3 rounded-xl text-left"
+      style={{ background: C.panel, border: `1px solid ${C.border}` }}
+    >
+      <AvatarCircle name={u.display_name} avatarUrl={u.avatar_url} size={40} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium flex items-center gap-1.5">
+          <span className="truncate">{u.display_name}</span>
+          {u.is_admin && <AdminBadge size={9} />}
+          <badge.icon size={13} color={badge.color} className="shrink-0" />
+        </div>
+        {activity && (
+          <div className="text-xs truncate mt-0.5" style={{ color: C.muted }}>
+            {activity}
+          </div>
+        )}
+      </div>
+      <ChevronRight size={16} color={C.muted} className="shrink-0" />
+    </button>
   );
 }
 
