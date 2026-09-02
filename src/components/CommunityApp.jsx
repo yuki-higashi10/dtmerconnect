@@ -95,6 +95,27 @@ function badgeFor(likes) {
   return b;
 }
 
+const ADMIN_BADGE_COLOR = C.blue;
+
+// 管理者専用バッジ。いいね数に応じた称号バッジとは別枠で、運営であることを示す
+function AdminBadge({ size = 11 }) {
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full font-semibold shrink-0"
+      style={{
+        background: `${ADMIN_BADGE_COLOR}22`,
+        color: ADMIN_BADGE_COLOR,
+        border: `1px solid ${ADMIN_BADGE_COLOR}55`,
+        fontSize: size,
+        lineHeight: 1,
+      }}
+    >
+      <Shield size={size + 2} />
+      運営
+    </span>
+  );
+}
+
 const REPORT_REASONS = [
   { value: "spam", label: "スパム・広告" },
   { value: "inappropriate", label: "不適切なコンテンツ" },
@@ -192,7 +213,7 @@ function Avatar({ name, avatarUrl, size = 28, userId, onOpenProfile }) {
   );
 }
 
-function AuthorLine({ name, likes, avatarUrl, avatarSize = 20, textClassName = "text-sm", userId, onOpenProfile }) {
+function AuthorLine({ name, likes, avatarUrl, avatarSize = 20, textClassName = "text-sm", userId, onOpenProfile, isAdmin = false }) {
   const badge = likes != null ? badgeFor(likes) : null;
   const clickable = Boolean(userId && onOpenProfile);
   return (
@@ -212,6 +233,7 @@ function AuthorLine({ name, likes, avatarUrl, avatarSize = 20, textClassName = "
       >
         {name}
       </span>
+      {isAdmin && <AdminBadge size={Math.max(9, Math.round(avatarSize * 0.5))} />}
       {badge && <badge.icon size={Math.round(avatarSize * 0.7)} color={badge.color} className="shrink-0" />}
     </div>
   );
@@ -572,7 +594,7 @@ function timeStr(sec) {
 
 // posts全セクション共通の取得カラム(自分の投稿一覧・公開プロフィール・フォロー中フィード・横断検索で共用)
 const FULL_POST_SELECT =
-  "id, user_id, section, thread_type, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, reference_url, is_resolved, like_count, comment_count, download_count, play_count, created_at, users(display_name, total_likes_received, avatar_url), attachments(id, file_type, file_url)";
+  "id, user_id, section, thread_type, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, reference_url, is_resolved, like_count, comment_count, download_count, play_count, created_at, users(display_name, total_likes_received, avatar_url, is_admin), attachments(id, file_type, file_url)";
 
 // フリーワード検索: タイトル・タグ・ジャンル・(パッチの場合)対応シンセ/プラグイン名を対象にする
 function matchesSearchQuery(post, query, { includeTargetSynth = false } = {}) {
@@ -612,7 +634,7 @@ function useSectionPosts(section) {
     return supabase
       .from("posts")
       .select(
-        "id, user_id, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, created_at, like_count, comment_count, download_count, play_count, users(display_name, total_likes_received, avatar_url), attachments(id, file_type, file_url)",
+        "id, user_id, title, body, bpm, key, used_daw, genre, tags, midi_patch_type, target_synth, sound_category, streaming_links, thumbnail_url, created_at, like_count, comment_count, download_count, play_count, users(display_name, total_likes_received, avatar_url, is_admin), attachments(id, file_type, file_url)",
       )
       .eq("section", section)
       .order("created_at", { ascending: false })
@@ -643,6 +665,7 @@ function useSectionPosts(section) {
               author: p.users?.display_name ?? "unknown",
               authorLikes: p.users?.total_likes_received ?? 0,
               authorAvatarUrl: p.users?.avatar_url ?? null,
+              authorIsAdmin: p.users?.is_admin ?? false,
               likes: p.like_count,
               liked: likedIds.has(p.id),
               bookmarked: bookmarkedIds.has(p.id),
@@ -676,6 +699,7 @@ function mapMyPost(p, likedIds, bookmarkedIds = new Set()) {
     author: p.users?.display_name ?? "unknown",
     authorLikes: p.users?.total_likes_received ?? 0,
     authorAvatarUrl: p.users?.avatar_url ?? null,
+    authorIsAdmin: p.users?.is_admin ?? false,
     likes: p.like_count,
     liked: likedIds.has(p.id),
     bookmarked: bookmarkedIds.has(p.id),
@@ -1247,7 +1271,7 @@ export default function App() {
     let query = supabase
       .from("posts")
       .select(
-        "id, user_id, thread_type, title, body, reference_url, is_resolved, like_count, comment_count, users(display_name, total_likes_received, avatar_url)",
+        "id, user_id, thread_type, title, body, reference_url, is_resolved, like_count, comment_count, users(display_name, total_likes_received, avatar_url, is_admin)",
         { count: "exact" },
       )
       .eq("section", "daw_community")
@@ -1276,6 +1300,7 @@ export default function App() {
               author: p.users?.display_name ?? "unknown",
               authorLikes: p.users?.total_likes_received ?? 0,
               authorAvatarUrl: p.users?.avatar_url ?? null,
+              authorIsAdmin: p.users?.is_admin ?? false,
               likes: p.like_count,
               liked: likedIds.has(p.id),
               bookmarked: bookmarkedIds.has(p.id),
@@ -1317,7 +1342,7 @@ export default function App() {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("comments")
-      .select("id, user_id, body, created_at, users(display_name, avatar_url)")
+      .select("id, user_id, body, created_at, users(display_name, avatar_url, is_admin)")
       .eq("post_id", postId)
       .order("created_at", { ascending: true });
     if (!error && data) {
@@ -1328,6 +1353,7 @@ export default function App() {
           body: c.body,
           author: c.users?.display_name ?? "unknown",
           authorAvatarUrl: c.users?.avatar_url ?? null,
+          authorIsAdmin: c.users?.is_admin ?? false,
         })),
       );
     }
@@ -1884,6 +1910,7 @@ export default function App() {
             textClassName="text-xs"
             userId={detail.data.userId}
             onOpenProfile={openProfile}
+            isAdmin={detail.data.authorIsAdmin}
           />
         </div>
 
@@ -2143,11 +2170,12 @@ export default function App() {
                   <Avatar name={c.author} avatarUrl={c.authorAvatarUrl} size={22} userId={c.authorId} onOpenProfile={openProfile} />
                   <div className="flex-1 min-w-0">
                     <div
-                      className="text-xs"
+                      className="text-xs flex items-center gap-1.5"
                       style={{ color: C.muted, cursor: c.authorId ? "pointer" : "inherit" }}
                       onClick={c.authorId ? () => openProfile(c.authorId) : undefined}
                     >
-                      {c.author}
+                      <span className="truncate">{c.author}</span>
+                      {c.authorIsAdmin && <AdminBadge size={9} />}
                     </div>
                     <div className="text-sm whitespace-pre-wrap">{c.body}</div>
                     {user && !isGuest && c.authorId !== user.id && (
@@ -3176,6 +3204,7 @@ function PatchCard({ p, onPlay, onOpen, onOpenProfile }) {
         textClassName="text-xs"
         userId={p.userId}
         onOpenProfile={onOpenProfile}
+        isAdmin={p.authorIsAdmin}
       />
       <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: C.muted }}>
         <span className="flex items-center gap-1">
@@ -3223,6 +3252,7 @@ function TrackCard({ tr, onPlay, onOpen, onOpenProfile }) {
         textClassName="text-xs"
         userId={tr.userId}
         onOpenProfile={onOpenProfile}
+        isAdmin={tr.authorIsAdmin}
       />
       <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: C.muted }}>
         <span className="flex items-center gap-1">
@@ -3253,6 +3283,7 @@ function ThreadCard({ t, color, onOpen, onOpenProfile }) {
         textClassName="text-xs"
         userId={t.userId}
         onOpenProfile={onOpenProfile}
+        isAdmin={t.authorIsAdmin}
       />
     </div>
   );
@@ -3308,6 +3339,7 @@ function SearchResultRow({ item, onOpen, onOpenProfile }) {
         textClassName="text-xs"
         userId={data.userId}
         onOpenProfile={onOpenProfile}
+        isAdmin={data.authorIsAdmin}
       />
     </div>
   );
@@ -3481,6 +3513,7 @@ function AuthPanel() {
         <div>
           <div className="font-medium flex items-center gap-1.5">
             {profile?.display_name ?? "ゲスト"}
+            {profile?.is_admin && <AdminBadge />}
             <badge.icon size={16} color={badge.color} />
           </div>
           <div className="text-xs mono-font" style={{ color: C.muted }}>
@@ -3803,7 +3836,7 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
     return supabase
       .from("users")
       .select(
-        "id, display_name, avatar_url, total_likes_received, badge_level, bio, used_daws, activity_area, sns_links, follower_count, following_count, is_deleted",
+        "id, display_name, avatar_url, total_likes_received, badge_level, bio, used_daws, activity_area, sns_links, follower_count, following_count, is_deleted, is_admin",
       )
       .eq("id", userId)
       .single()
@@ -3923,6 +3956,7 @@ function PublicProfileView({ userId, onOpenPost, onOpenFollowList }) {
         <div className="flex-1 min-w-0">
           <div className="font-medium flex items-center gap-1.5">
             {profile.display_name}
+            {profile.is_admin && <AdminBadge />}
             <badge.icon size={16} color={badge.color} />
           </div>
           <div className="text-xs mono-font" style={{ color: C.muted }}>
@@ -4062,7 +4096,7 @@ function FollowListView({ userId, initialTab, onOpenProfile, onBack }) {
         }
         const { data: userRows } = await supabase
           .from("users")
-          .select("id, display_name, avatar_url, total_likes_received")
+          .select("id, display_name, avatar_url, total_likes_received, is_admin")
           .in("id", targetIds);
         setUsers(userRows ?? []);
         setLoading(false);
@@ -4145,6 +4179,7 @@ function FollowListView({ userId, initialTab, onOpenProfile, onBack }) {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium flex items-center gap-1.5">
                     {u.display_name}
+                    {u.is_admin && <AdminBadge size={9} />}
                     <badge.icon size={13} color={badge.color} />
                   </div>
                 </div>
@@ -4456,7 +4491,7 @@ function RecommendedUsersModal({ onClose, onOpenProfile }) {
     const supabase = createClient();
     return supabase
       .from("users")
-      .select("id, display_name, avatar_url, total_likes_received, badge_level")
+      .select("id, display_name, avatar_url, total_likes_received, badge_level, is_admin")
       .eq("is_guest", false)
       .neq("id", user.id)
       .order("badge_level", { ascending: false })
@@ -4534,6 +4569,7 @@ function RecommendedUsersModal({ onClose, onOpenProfile }) {
                   <button type="button" onClick={() => handleOpenProfile(u.id)} className="flex-1 min-w-0 text-left">
                     <div className="text-sm font-medium flex items-center gap-1.5">
                       {u.display_name}
+                      {u.is_admin && <AdminBadge size={9} />}
                       <badge.icon size={13} color={badge.color} />
                     </div>
                     <div className="text-xs" style={{ color: C.muted }}>
@@ -5890,6 +5926,7 @@ function ThreadRow({ t, color, onOpen, interactive, onLikeToggle, onBookmarkTogg
           textClassName="text-sm"
           userId={t.userId}
           onOpenProfile={onOpenProfile}
+          isAdmin={t.authorIsAdmin}
         />
       </div>
       <div className="flex flex-col items-end gap-2 shrink-0">
