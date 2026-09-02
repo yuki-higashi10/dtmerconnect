@@ -3146,7 +3146,7 @@ export default function App() {
           <button
             key={n.id}
             onClick={() => setView(n.id)}
-            className="px-3 py-3"
+            className="px-3 pt-2 pb-3"
             style={{ color: view === n.id ? C.text : C.muted }}
           >
             <n.icon size={24} />
