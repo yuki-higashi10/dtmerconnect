@@ -2425,6 +2425,28 @@ export default function App() {
                 </div>
               )}
 
+              <Row title="楽曲投稿の新着">
+                {searchState.loading ? (
+                  <div className="text-sm" style={{ color: C.muted }}>
+                    読み込み中...
+                  </div>
+                ) : homeNewTracks.length === 0 ? (
+                  <div className="text-sm" style={{ color: C.muted }}>
+                    まだ投稿がありません
+                  </div>
+                ) : (
+                  homeNewTracks.map((mp) => (
+                    <TrackCard
+                      key={mp.data.id}
+                      tr={mp.data}
+                      onPlay={() => playTrack(mp.data, C.teal)}
+                      onOpen={() => openDetail("track", mp.data, true)}
+                      onOpenProfile={openProfile}
+                    />
+                  ))
+                )}
+              </Row>
+
               <Row title="今週の人気MIDI/パッチ">
                 {searchState.loading ? (
                   <div className="text-sm" style={{ color: C.muted }}>
@@ -2463,28 +2485,6 @@ export default function App() {
                       t={mp.data}
                       color={C.muted}
                       onOpen={() => openDetail("thread", mp.data, true)}
-                      onOpenProfile={openProfile}
-                    />
-                  ))
-                )}
-              </Row>
-
-              <Row title="楽曲投稿の新着">
-                {searchState.loading ? (
-                  <div className="text-sm" style={{ color: C.muted }}>
-                    読み込み中...
-                  </div>
-                ) : homeNewTracks.length === 0 ? (
-                  <div className="text-sm" style={{ color: C.muted }}>
-                    まだ投稿がありません
-                  </div>
-                ) : (
-                  homeNewTracks.map((mp) => (
-                    <TrackCard
-                      key={mp.data.id}
-                      tr={mp.data}
-                      onPlay={() => playTrack(mp.data, C.teal)}
-                      onOpen={() => openDetail("track", mp.data, true)}
                       onOpenProfile={openProfile}
                     />
                   ))
@@ -3146,7 +3146,7 @@ export default function App() {
           <button
             key={n.id}
             onClick={() => setView(n.id)}
-            className="px-3 pt-2 pb-3"
+            className="px-3 pt-1 pb-4"
             style={{ color: view === n.id ? C.text : C.muted }}
           >
             <n.icon size={24} />
