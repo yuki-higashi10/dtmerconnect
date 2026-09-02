@@ -2817,7 +2817,7 @@ export default function App() {
                     まだ投稿がありません
                   </div>
                 )}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3">
                   {visibleTracks.map((tr) => (
                     <TrackCard
                       key={tr.id}
@@ -2825,6 +2825,7 @@ export default function App() {
                       onPlay={() => playTrack(tr, C.teal)}
                       onOpen={() => openDetail("track", tr, true)}
                       onOpenProfile={openProfile}
+                      fluid
                     />
                   ))}
                 </div>
@@ -2925,9 +2926,9 @@ export default function App() {
                     まだ投稿がありません
                   </div>
                 )}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3">
                   {visiblePatches.map((p) => (
-                    <PatchCard key={p.id} p={p} onPlay={() => play(p, C.amber)} onOpen={() => openDetail("patch", p, true)} onOpenProfile={openProfile} />
+                    <PatchCard key={p.id} p={p} onPlay={() => play(p, C.amber)} onOpen={() => openDetail("patch", p, true)} onOpenProfile={openProfile} fluid />
                   ))}
                 </div>
               </div>
@@ -3256,10 +3257,14 @@ function MyPostsRow({ title, count, likes, comments, children }) {
   );
 }
 
-function PatchCard({ p, onPlay, onOpen, onOpenProfile }) {
+function PatchCard({ p, onPlay, onOpen, onOpenProfile, fluid = false }) {
   const hasSample = p.attachments?.some((a) => a.file_type === "audio_preview");
   return (
-    <div className="shrink-0 w-44 p-3 rounded-xl cursor-pointer" style={{ background: C.panel, border: `1px solid ${C.border}` }} onClick={onOpen}>
+    <div
+      className={`${fluid ? "w-full" : "shrink-0 w-44"} p-3 rounded-xl cursor-pointer`}
+      style={{ background: C.panel, border: `1px solid ${C.border}` }}
+      onClick={onOpen}
+    >
       <div className="relative mb-2">
         {p.thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -3314,9 +3319,13 @@ function PatchCard({ p, onPlay, onOpen, onOpenProfile }) {
   );
 }
 
-function TrackCard({ tr, onPlay, onOpen, onOpenProfile }) {
+function TrackCard({ tr, onPlay, onOpen, onOpenProfile, fluid = false }) {
   return (
-    <div className="shrink-0 w-44 p-3 rounded-xl cursor-pointer" style={{ background: C.panel, border: `1px solid ${C.border}` }} onClick={onOpen}>
+    <div
+      className={`${fluid ? "w-full" : "shrink-0 w-44"} p-3 rounded-xl cursor-pointer`}
+      style={{ background: C.panel, border: `1px solid ${C.border}` }}
+      onClick={onOpen}
+    >
       <div className="relative mb-2">
         {tr.thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
