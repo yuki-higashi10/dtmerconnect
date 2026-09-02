@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
   const actorName = (notification.actor as unknown as { display_name?: string } | null)?.display_name ?? "誰か";
   const body = NOTIFICATION_TEXT[notification.type]?.(actorName, notification.message) ?? "新しい通知があります";
-  const url = notification.post_id ? `/?post=${notification.post_id}` : "/";
+  const url = notification.post_id ? `/posts/${notification.post_id}` : "/";
 
   const payload = JSON.stringify({
     title: "DTMer Connect",
