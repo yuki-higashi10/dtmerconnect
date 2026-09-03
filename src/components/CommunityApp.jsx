@@ -976,6 +976,7 @@ export default function App() {
         .from("users")
         .select("id, display_name, avatar_url, total_likes_received, bio, activity_area, is_admin")
         .eq("is_guest", false)
+        .eq("is_deleted", false)
         .or(`display_name.ilike.%${safeQ}%,bio.ilike.%${safeQ}%,activity_area.ilike.%${safeQ}%`)
         .limit(30)
         .then(({ data }) => {
@@ -4410,9 +4411,9 @@ function AdminView() {
     };
 
     return Promise.all([
-      countQuery("users", (q) => q.eq("is_guest", false)),
-      countQuery("users", (q) => q.eq("is_guest", false).gte("created_at", todayStart.toISOString())),
-      countQuery("users", (q) => q.eq("is_guest", false).gte("created_at", weekStart.toISOString())),
+      countQuery("users", (q) => q.eq("is_guest", false).eq("is_deleted", false)),
+      countQuery("users", (q) => q.eq("is_guest", false).eq("is_deleted", false).gte("created_at", todayStart.toISOString())),
+      countQuery("users", (q) => q.eq("is_guest", false).eq("is_deleted", false).gte("created_at", weekStart.toISOString())),
       countQuery("posts", (q) => q.eq("section", "daw_community")),
       countQuery("posts", (q) => q.eq("section", "track")),
       countQuery("posts", (q) => q.eq("section", "midi_patch")),
