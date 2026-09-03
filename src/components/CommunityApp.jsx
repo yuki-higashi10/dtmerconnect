@@ -924,6 +924,7 @@ export default function App() {
   const [showRecommendedUsers, setShowRecommendedUsers] = useState(false);
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
   const [showUpgradeError, setShowUpgradeError] = useState(false);
+  const [pendingCodeConfirm, setPendingCodeConfirm] = useState(false);
   const [activeChannel, setActiveChannel] = useState(null);
   const [threadTab, setThreadTab] = useState("all");
   const [nowPlaying, setNowPlaying] = useState(null); // {id,title,author,seed,color,audioUrl}
@@ -1262,12 +1263,16 @@ export default function App() {
   // URLの ?post=<id> を検知して、専用ページ(/posts/<id>)へリダイレクトする(旧共有リンクの互換用)
   // ?upgraded=1 (メール確認完了直後のリダイレクト) を検知して、完了メッセージとおすすめユーザーを表示する
   // ?upgrade_error=1 (確認リンクが無効・期限切れ等) を検知して、エラーメッセージを表示する
+  // ?code=<uuid> (SupabaseのPKCE方式の確認リンク。/auth/confirmを経由せず直接ここにリダイレクトされ、
+  // supabase-jsクライアントが自動でセッション交換する) も検知し、確認完了を待って完了メッセージを出す
   useEffect(() => {
     if (authLoading) return;
     const params = new URLSearchParams(window.location.search);
     const sharedPostId = params.get("post");
     const justUpgraded = params.get("upgraded") === "1";
     const upgradeError = params.get("upgrade_error") === "1";
+    const authCode = params.get("code");
+    const authError = params.get("error") || params.get("error_description");
 
     if (sharedPostId) {
       router.replace(`/posts/${sharedPostId}`);
@@ -1279,15 +1284,39 @@ export default function App() {
     if (justUpgraded && !isGuest) {
       Promise.resolve().then(() => setShowRecommendedUsers(true));
     }
-    if (upgradeError) {
+    if (upgradeError || authError) {
       Promise.resolve().then(() => setShowUpgradeError(true));
     }
+    if (authCode) {
+      Promise.resolve().then(() => setPendingCodeConfirm(true));
+    }
 
-    if (justUpgraded || upgradeError) {
+    if (justUpgraded || upgradeError || authCode || authError) {
       window.history.replaceState(null, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
+
+  // ?code=<uuid> を検知した後、実際にセッション交換が完了してゲスト状態でなくなるのを待ってから
+  // 完了メッセージを出す(交換自体はsupabase-jsクライアントが裏側で非同期に行うため)
+  useEffect(() => {
+    if (!pendingCodeConfirm) return;
+    if (!authLoading && !isGuest) {
+      Promise.resolve().then(() => {
+        setShowUpgradeSuccess(true);
+        setShowRecommendedUsers(true);
+        setPendingCodeConfirm(false);
+      });
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setPendingCodeConfirm((pending) => {
+        if (pending) setShowUpgradeError(true);
+        return false;
+      });
+    }, 8000);
+    return () => clearTimeout(timeout);
+  }, [pendingCodeConfirm, isGuest, authLoading]);
 
   // メール確認完了/エラーメッセージを数秒後に自動で消す
   useEffect(() => {
