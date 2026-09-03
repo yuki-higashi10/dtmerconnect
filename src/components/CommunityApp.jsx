@@ -3017,7 +3017,41 @@ export default function App() {
                   <div className="text-xs uppercase mb-2 mt-6" style={{ color: C.muted }}>
                     保存した投稿
                   </div>
-                  <PostLinkList posts={bookmarkedPosts} onOpenPost={openDetail} />
+                  {bookmarkedPosts.length === 0 ? (
+                    <div className="text-sm" style={{ color: C.muted }}>
+                      まだブックマークした投稿がありません
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 overflow-x-auto row-scroll pb-1">
+                      {bookmarkedPosts.map((mp) =>
+                        mp.kind === "thread" ? (
+                          <ThreadCard
+                            key={mp.data.id}
+                            t={mp.data}
+                            color={C.muted}
+                            onOpen={() => openDetail("thread", mp.data, true)}
+                            onOpenProfile={openProfile}
+                          />
+                        ) : mp.kind === "track" ? (
+                          <TrackCard
+                            key={mp.data.id}
+                            tr={mp.data}
+                            onPlay={() => playTrack(mp.data, C.teal)}
+                            onOpen={() => openDetail("track", mp.data, true)}
+                            onOpenProfile={openProfile}
+                          />
+                        ) : (
+                          <PatchCard
+                            key={mp.data.id}
+                            p={mp.data}
+                            onPlay={() => play(mp.data, C.amber)}
+                            onOpen={() => openDetail("patch", mp.data, true)}
+                            onOpenProfile={openProfile}
+                          />
+                        ),
+                      )}
+                    </div>
+                  )}
 
                   <div className="text-xs uppercase mb-2 mt-6" style={{ color: C.muted }}>
                     ブロック中のユーザー
