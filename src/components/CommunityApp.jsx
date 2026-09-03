@@ -4664,6 +4664,156 @@ function AdminView() {
           ))}
         </div>
       )}
+
+      <AdminUsersSection />
+    </div>
+  );
+}
+
+function AdminUsersSection() {
+  const PAGE_SIZE = 20;
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [users, setUsers] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  function loadUsers(pageArg, queryArg) {
+    setLoading(true);
+    const params = new URLSearchParams({ offset: String(pageArg * PAGE_SIZE), limit: String(PAGE_SIZE) });
+    if (queryArg) params.set("q", queryArg);
+    return fetch(`/api/admin/users?${params.toString()}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          setError(data.error);
+          setUsers([]);
+          setTotal(0);
+        } else {
+          setError("");
+          setUsers(data.users ?? []);
+          setTotal(data.total ?? 0);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        setError("読み込みに失敗しました");
+        setLoading(false);
+      });
+  }
+
+  // 検索語のデバウンス
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      Promise.resolve().then(() => setDebouncedQuery(query.trim()));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  // 検索語が変わったら1ページ目に戻す
+  useEffect(() => {
+    Promise.resolve().then(() => setPage(0));
+  }, [debouncedQuery]);
+
+  useEffect(() => {
+    Promise.resolve().then(() => loadUsers(page, debouncedQuery));
+  }, [page, debouncedQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <div className="mt-6">
+      <div className="text-sm font-medium mb-2">登録者一覧</div>
+      <div
+        className="flex items-center gap-2 px-3 py-2 rounded-lg mb-3"
+        style={{ background: C.panel, border: `1px solid ${C.border}` }}
+      >
+        <Search size={15} color={C.muted} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="ユーザー名・メールアドレスで検索"
+          className="bg-transparent outline-none text-sm flex-1"
+          style={{ color: C.text }}
+        />
+      </div>
+
+      {error && (
+        <div className="text-sm mb-3" style={{ color: C.rose }}>
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-sm" style={{ color: C.muted }}>
+          読み込み中...
+        </div>
+      ) : users.length === 0 ? (
+        <div className="text-sm" style={{ color: C.muted }}>
+          該当するユーザーが見つかりません
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {users.map((u) => {
+            const badge = badgeFor(u.total_likes_received ?? 0);
+            return (
+              <div
+                key={u.id}
+                className="flex items-center gap-3 p-3 rounded-xl"
+                style={{ background: C.panel, border: `1px solid ${C.border}` }}
+              >
+                <AvatarCircle name={u.display_name} avatarUrl={u.avatar_url} size={36} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium flex items-center gap-1.5">
+                    <span className="truncate">{u.display_name}</span>
+                    {u.is_admin && <AdminBadge size={9} />}
+                    <badge.icon size={13} color={badge.color} className="shrink-0" />
+                  </div>
+                  <div className="text-xs truncate" style={{ color: C.muted }}>
+                    {u.email || "(メール取得不可)"}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs mt-0.5 flex-wrap" style={{ color: C.muted }}>
+                    <span>登録日: {new Date(u.created_at).toLocaleDateString("ja-JP")}</span>
+                    <span>投稿数: {u.postCount ?? 0}</span>
+                    <span>累計いいね: {u.total_likes_received ?? 0}</span>
+                    <span>称号: {badge.name}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="px-3 py-1.5 rounded-lg text-sm"
+            style={{ border: `1px solid ${C.border}`, color: page === 0 ? C.muted : C.text, opacity: page === 0 ? 0.5 : 1 }}
+          >
+            前へ
+          </button>
+          <span className="text-xs" style={{ color: C.muted }}>
+            {page + 1} / {totalPages} ページ({total}人)
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page + 1 >= totalPages}
+            className="px-3 py-1.5 rounded-lg text-sm"
+            style={{
+              border: `1px solid ${C.border}`,
+              color: page + 1 >= totalPages ? C.muted : C.text,
+              opacity: page + 1 >= totalPages ? 0.5 : 1,
+            }}
+          >
+            次へ
+          </button>
+        </div>
+      )}
     </div>
   );
 }
