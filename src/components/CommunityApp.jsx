@@ -921,7 +921,7 @@ export default function App() {
   const [followListTab, setFollowListTab] = useState("followers");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [copyLinkStatus, setCopyLinkStatus] = useState(null); // null | "copied" | "error"
-  const [showRecommendedUsers, setShowRecommendedUsers] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
   const [showUpgradeError, setShowUpgradeError] = useState(false);
   const [pendingCodeConfirm, setPendingCodeConfirm] = useState(false);
@@ -1282,7 +1282,7 @@ export default function App() {
       Promise.resolve().then(() => setShowUpgradeSuccess(true));
     }
     if (justUpgraded && !isGuest) {
-      Promise.resolve().then(() => setShowRecommendedUsers(true));
+      Promise.resolve().then(() => setShowWelcomeModal(true));
     }
     if (upgradeError || authError) {
       Promise.resolve().then(() => setShowUpgradeError(true));
@@ -1304,7 +1304,7 @@ export default function App() {
     if (!authLoading && !isGuest) {
       Promise.resolve().then(() => {
         setShowUpgradeSuccess(true);
-        setShowRecommendedUsers(true);
+        setShowWelcomeModal(true);
         setPendingCodeConfirm(false);
       });
       return;
@@ -3292,8 +3292,22 @@ export default function App() {
         </div>
       )}
 
-      {showRecommendedUsers && (
-        <RecommendedUsersModal onClose={() => setShowRecommendedUsers(false)} onOpenProfile={openProfile} />
+      {showWelcomeModal && (
+        <WelcomeModal
+          onClose={() => setShowWelcomeModal(false)}
+          onGoToChannel={() => {
+            setShowWelcomeModal(false);
+            openChannel("general");
+          }}
+          onGoToTracks={() => {
+            setShowWelcomeModal(false);
+            setView("tracks");
+          }}
+          onGoToPatches={() => {
+            setShowWelcomeModal(false);
+            setView("patches");
+          }}
+        />
       )}
 
       {showUpgradeSuccess && (
@@ -4654,54 +4668,7 @@ function AdminView() {
   );
 }
 
-function RecommendedUsersModal({ onClose, onOpenProfile }) {
-  const { user, refreshProfile } = useAuth();
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [followedIds, setFollowedIds] = useState(new Set());
-  const [busyId, setBusyId] = useState(null);
-
-  function load() {
-    if (!user) {
-      return Promise.resolve().then(() => setLoading(false));
-    }
-    const supabase = createClient();
-    return supabase
-      .from("users")
-      .select("id, display_name, avatar_url, total_likes_received, badge_level, is_admin")
-      .eq("is_guest", false)
-      .neq("id", user.id)
-      .order("badge_level", { ascending: false })
-      .order("total_likes_received", { ascending: false })
-      .limit(5)
-      .then(({ data }) => {
-        setUsers(data ?? []);
-        setLoading(false);
-      });
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function handleFollow(targetId) {
-    if (!user || busyId) return;
-    setBusyId(targetId);
-    const supabase = createClient();
-    const { error } = await supabase.from("follows").insert({ follower_id: user.id, followed_id: targetId });
-    if (!error) {
-      setFollowedIds((prev) => new Set(prev).add(targetId));
-      await refreshProfile();
-    }
-    setBusyId(null);
-  }
-
-  function handleOpenProfile(userId) {
-    onClose();
-    onOpenProfile(userId);
-  }
-
+function WelcomeModal({ onClose, onGoToChannel, onGoToTracks, onGoToPatches }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
       <div
@@ -4711,74 +4678,50 @@ function RecommendedUsersModal({ onClose, onOpenProfile }) {
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5 font-semibold">
             <Sparkles size={16} color={C.amber} />
-            おすすめユーザー
+            登録ありがとうございます!
           </div>
           <button type="button" onClick={onClose} style={{ color: C.muted }}>
             <X size={18} />
           </button>
         </div>
-        <div className="text-xs mb-4" style={{ color: C.muted }}>
-          登録ありがとうございます!活発なユーザーをフォローしてみましょう。
+        <div className="text-sm mb-4" style={{ color: C.muted }}>
+          さっそく最初の投稿をしてみませんか?DAW別コミュニティでの質問・Tips共有、楽曲投稿、MIDI/パッチ共有など、お好きな形で参加できます。
         </div>
 
-        {loading ? (
-          <div className="text-sm py-4 text-center" style={{ color: C.muted }}>
-            読み込み中...
-          </div>
-        ) : users.length === 0 ? (
-          <div className="text-sm py-4 text-center" style={{ color: C.muted }}>
-            おすすめできるユーザーがまだいません
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2 mb-4">
-            {users.map((u) => {
-              const badge = badgeFor(u.total_likes_received ?? 0);
-              const isFollowed = followedIds.has(u.id);
-              return (
-                <div
-                  key={u.id}
-                  className="flex items-center gap-3 p-3 rounded-xl"
-                  style={{ background: C.bg, border: `1px solid ${C.border}` }}
-                >
-                  <button type="button" onClick={() => handleOpenProfile(u.id)} className="shrink-0">
-                    <AvatarCircle name={u.display_name} avatarUrl={u.avatar_url} size={36} />
-                  </button>
-                  <button type="button" onClick={() => handleOpenProfile(u.id)} className="flex-1 min-w-0 text-left">
-                    <div className="text-sm font-medium flex items-center gap-1.5">
-                      {u.display_name}
-                      {u.is_admin && <AdminBadge size={9} />}
-                      <badge.icon size={13} color={badge.color} />
-                    </div>
-                    <div className="text-xs" style={{ color: C.muted }}>
-                      称号: {badge.name}
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleFollow(u.id)}
-                    disabled={isFollowed || busyId === u.id}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium shrink-0"
-                    style={{
-                      background: isFollowed ? "transparent" : C.amber,
-                      border: isFollowed ? `1px solid ${C.border}` : "none",
-                      color: isFollowed ? C.text : C.bg,
-                    }}
-                  >
-                    {isFollowed ? "フォロー中" : "フォローする"}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <div className="flex flex-col gap-2 mb-4">
+          <button
+            type="button"
+            onClick={onGoToChannel}
+            className="w-full text-left px-4 py-3 rounded-lg text-sm font-medium"
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+          >
+            DAW別コミュニティに投稿する
+          </button>
+          <button
+            type="button"
+            onClick={onGoToTracks}
+            className="w-full text-left px-4 py-3 rounded-lg text-sm font-medium"
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+          >
+            楽曲を投稿する
+          </button>
+          <button
+            type="button"
+            onClick={onGoToPatches}
+            className="w-full text-left px-4 py-3 rounded-lg text-sm font-medium"
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+          >
+            MIDI/パッチを共有する
+          </button>
+        </div>
 
         <button
           type="button"
           onClick={onClose}
           className="w-full px-4 py-2 rounded-lg text-sm font-medium"
-          style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }}
+          style={{ background: C.amber, color: C.bg }}
         >
-          スキップ
+          あとで投稿する
         </button>
       </div>
     </div>
