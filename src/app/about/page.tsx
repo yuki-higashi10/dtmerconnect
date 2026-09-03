@@ -21,7 +21,7 @@ export default function AboutPage() {
         <p>
           本サービスに関するお問い合わせ、著作権侵害やその他の問題のご報告は、下記の連絡先までお願いいたします。
         </p>
-        <p>メールアドレス: contact@example.com(仮の連絡先です。正式な連絡先に差し替え予定です)</p>
+        <p>メールアドレス: support@dtmerconnect.com</p>
       </LegalSection>
 
       <LegalSection heading="お問い合わせフォーム">
