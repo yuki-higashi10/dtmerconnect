@@ -3517,7 +3517,7 @@ const IMAGE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
 function AuthPanel() {
-  const { user, profile, isGuest, loading, refreshProfile } = useAuth();
+  const { user, profile, isGuest, loading } = useAuth();
   const [authMode, setAuthMode] = useState("login"); // "login" | "register" | "forgot"
 
   const [email, setEmail] = useState("");
@@ -3534,62 +3534,6 @@ function AuthPanel() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotStatus, setForgotStatus] = useState(null); // null | "sending" | "sent" | "error"
   const [forgotError, setForgotError] = useState("");
-
-  const [avatarPreview, setAvatarPreview] = useState(null);
-  const [avatarUploading, setAvatarUploading] = useState(false);
-  const [avatarError, setAvatarError] = useState("");
-
-  useEffect(() => {
-    return () => {
-      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-    };
-  }, [avatarPreview]);
-
-  async function handleAvatarChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAvatarError("");
-
-    if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
-      setAvatarError("jpg・png・webp形式の画像を選択してください");
-      e.target.value = "";
-      return;
-    }
-    if (file.size > IMAGE_MAX_BYTES) {
-      setAvatarError("画像サイズは2MB以下にしてください");
-      e.target.value = "";
-      return;
-    }
-
-    setAvatarPreview(URL.createObjectURL(file));
-    setAvatarUploading(true);
-
-    const supabase = createClient();
-    const ext = file.name.split(".").pop();
-    const path = `${user.id}/avatar.${ext}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(path, file, { upsert: true, contentType: file.type });
-
-    if (uploadError) {
-      setAvatarUploading(false);
-      setAvatarError(uploadError.message);
-      return;
-    }
-
-    const { data: publicUrlData } = supabase.storage.from("avatars").getPublicUrl(path);
-    const publicUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
-
-    const { error: dbError } = await supabase.from("users").update({ avatar_url: publicUrl }).eq("id", user.id);
-
-    setAvatarUploading(false);
-    if (dbError) {
-      setAvatarError(dbError.message);
-      return;
-    }
-    await refreshProfile();
-  }
 
   async function handleUpgrade(e) {
     e.preventDefault();
@@ -3672,57 +3616,38 @@ function AuthPanel() {
     );
   }
 
+  // 本登録済みユーザーのプロフィール表示・編集はProfileEditorに集約されているため、
+  // ここではゲスト向けの簡易表示とログイン/登録フォームのみを担当する
+  if (!isGuest) return null;
+
   const badge = badgeFor(profile?.total_likes_received ?? 0);
 
   return (
     <>
       <div className="p-4 rounded-xl mb-4 flex items-center gap-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
-        <Avatar name={profile?.display_name ?? "ゲスト"} avatarUrl={avatarPreview ?? profile?.avatar_url} size={48} />
+        <Avatar name={profile?.display_name ?? "ゲスト"} avatarUrl={profile?.avatar_url} size={48} />
         <div>
           <div className="font-medium flex items-center gap-1.5">
             {profile?.display_name ?? "ゲスト"}
-            {profile?.is_admin && <AdminBadge />}
             <badge.icon size={16} color={badge.color} />
           </div>
           <div className="text-xs mono-font" style={{ color: C.muted }}>
             称号: {badge.name} (累計{profile?.total_likes_received ?? 0}いいね)
           </div>
-          <div className="text-xs mt-1" style={{ color: isGuest ? C.amber : C.teal }}>
-            {isGuest ? "ゲストとして利用中" : `ログイン済み${user?.email ? `(${user.email})` : ""}`}
+          <div className="text-xs mt-1" style={{ color: C.amber }}>
+            ゲストとして利用中
           </div>
         </div>
       </div>
 
-      {!isGuest && (
-        <div className="p-4 rounded-xl mb-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
-          <div className="text-sm font-medium mb-2">プロフィール画像</div>
-          <FileInputButton
-            label={avatarUploading ? "アップロード中..." : "画像を選択"}
-            accept="image/jpeg,image/png,image/webp"
-            onChange={handleAvatarChange}
-            disabled={avatarUploading}
-          />
-          <div className="text-xs mt-1" style={{ color: C.muted }}>
-            jpg・png・webp / 2MBまで
-          </div>
-          {avatarError && (
-            <div className="text-xs mt-1" style={{ color: C.rose }}>
-              {avatarError}
-            </div>
-          )}
-        </div>
-      )}
-      {isGuest && (
-        <div
-          className="text-xs px-3 py-2 rounded-lg mb-4"
-          style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.muted }}
-        >
-          プロフィール画像を設定するには本登録が必要です。
-        </div>
-      )}
+      <div
+        className="text-xs px-3 py-2 rounded-lg mb-4"
+        style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.muted }}
+      >
+        プロフィール画像を設定するには本登録が必要です。
+      </div>
 
-      {isGuest && (
-        <div className="p-4 rounded-xl mb-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+      <div className="p-4 rounded-xl mb-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
           <div className="flex gap-2 mb-3">
             <button
               type="button"
@@ -3903,7 +3828,6 @@ function AuthPanel() {
             </>
           )}
         </div>
-      )}
     </>
   );
 }
@@ -4936,46 +4860,61 @@ function ProfileEditor({ onOpenFollowList }) {
 
   if (!profile) return null;
 
+  const badge = badgeFor(profile.total_likes_received ?? 0);
+
   return (
     <div className="p-4 rounded-xl mb-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-medium">プロフィール</div>
-        {!editing && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="flex items-center gap-1 text-xs font-medium"
-            style={{ color: C.text }}
-          >
-            <Pencil size={12} /> 編集
-          </button>
+      <div className="flex items-start gap-3">
+        <Avatar name={profile.display_name} avatarUrl={profile.avatar_url} size={56} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="font-medium flex items-center gap-1.5 min-w-0">
+              <span className="truncate">{profile.display_name}</span>
+              {profile.is_admin && <AdminBadge />}
+              <badge.icon size={16} color={badge.color} className="shrink-0" />
+            </div>
+            {!editing && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="flex items-center gap-1 text-xs font-medium shrink-0"
+                style={{ color: C.text }}
+              >
+                <Pencil size={12} /> 編集
+              </button>
+            )}
+          </div>
+          <div className="text-xs mt-0.5" style={{ color: C.muted }}>
+            称号: {badge.name}(累計{profile.total_likes_received ?? 0}いいね)
+          </div>
+          <div className="flex items-center gap-3 text-xs mt-1" style={{ color: C.muted }}>
+            <button
+              type="button"
+              onClick={() => onOpenFollowList?.(user?.id, "followers")}
+              className="hover:underline"
+              style={{ color: C.muted }}
+            >
+              フォロワー {profile.follower_count ?? 0}
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenFollowList?.(user?.id, "following")}
+              className="hover:underline"
+              style={{ color: C.muted }}
+            >
+              フォロー中 {profile.following_count ?? 0}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        {editing ? (
+          <ProfileEditForm profile={profile} refreshProfile={refreshProfile} onCancel={() => setEditing(false)} onSaved={() => setEditing(false)} />
+        ) : (
+          <ProfileInfoDisplay profile={profile} />
         )}
       </div>
-
-      <div className="flex items-center gap-3 text-xs mb-3" style={{ color: C.muted }}>
-        <button
-          type="button"
-          onClick={() => onOpenFollowList?.(user?.id, "followers")}
-          className="hover:underline"
-          style={{ color: C.muted }}
-        >
-          フォロワー {profile.follower_count ?? 0}
-        </button>
-        <button
-          type="button"
-          onClick={() => onOpenFollowList?.(user?.id, "following")}
-          className="hover:underline"
-          style={{ color: C.muted }}
-        >
-          フォロー中 {profile.following_count ?? 0}
-        </button>
-      </div>
-
-      {editing ? (
-        <ProfileEditForm profile={profile} refreshProfile={refreshProfile} onCancel={() => setEditing(false)} onSaved={() => setEditing(false)} />
-      ) : (
-        <ProfileInfoDisplay profile={profile} />
-      )}
     </div>
   );
 }
@@ -4990,6 +4929,62 @@ function ProfileEditForm({ profile, refreshProfile, onCancel, onSaved }) {
   );
   const [status, setStatus] = useState(null); // null | "saving" | "error"
   const [errorMsg, setErrorMsg] = useState("");
+
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    };
+  }, [avatarPreview]);
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarError("");
+
+    if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
+      setAvatarError("jpg・png・webp形式の画像を選択してください");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setAvatarError("画像サイズは2MB以下にしてください");
+      e.target.value = "";
+      return;
+    }
+
+    setAvatarPreview(URL.createObjectURL(file));
+    setAvatarUploading(true);
+
+    const supabase = createClient();
+    const ext = file.name.split(".").pop();
+    const path = `${profile.id}/avatar.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(path, file, { upsert: true, contentType: file.type });
+
+    if (uploadError) {
+      setAvatarUploading(false);
+      setAvatarError(uploadError.message);
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from("avatars").getPublicUrl(path);
+    const publicUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+    const { error: dbError } = await supabase.from("users").update({ avatar_url: publicUrl }).eq("id", profile.id);
+
+    setAvatarUploading(false);
+    if (dbError) {
+      setAvatarError(dbError.message);
+      return;
+    }
+    await refreshProfile();
+  }
 
   function toggleDaw(name) {
     setUsedDaws((prev) => (prev.includes(name) ? prev.filter((d) => d !== name) : [...prev, name]));
@@ -5048,6 +5043,25 @@ function ProfileEditForm({ profile, refreshProfile, onCancel, onSaved }) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <Avatar name={profile.display_name} avatarUrl={avatarPreview ?? profile.avatar_url} size={48} />
+        <div>
+          <FileInputButton
+            label={avatarUploading ? "アップロード中..." : "画像を変更"}
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleAvatarChange}
+            disabled={avatarUploading}
+          />
+          <div className="text-xs mt-1" style={{ color: C.muted }}>
+            jpg・png・webp / 2MBまで
+          </div>
+          {avatarError && (
+            <div className="text-xs mt-1" style={{ color: C.rose }}>
+              {avatarError}
+            </div>
+          )}
+        </div>
+      </div>
       <input
         value={displayName}
         onChange={(e) => setDisplayName(e.target.value.replace(/\s/g, ""))}
