@@ -5088,14 +5088,19 @@ function ProfileEditForm({ profile, refreshProfile, onCancel, onSaved }) {
           ))}
         </div>
       </div>
-      <input
-        value={activityArea}
-        onChange={(e) => setActivityArea(e.target.value)}
-        placeholder="活動エリア(任意, 例: 東京、オンライン中心)"
-        maxLength={40}
-        className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg"
-        style={{ border: `1px solid ${C.border}`, color: C.text }}
-      />
+      <div>
+        <div className="text-xs mb-1" style={{ color: C.muted }}>
+          活動エリア(任意)
+        </div>
+        <input
+          value={activityArea}
+          onChange={(e) => setActivityArea(e.target.value)}
+          placeholder="例: 東京、オンライン中心"
+          maxLength={40}
+          className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg w-full"
+          style={{ border: `1px solid ${C.border}`, color: C.text }}
+        />
+      </div>
       <div className="flex flex-col gap-2">
         <div className="text-xs" style={{ color: C.muted }}>
           SNS/配信リンク(任意、複数追加可)
