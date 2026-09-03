@@ -922,6 +922,8 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [copyLinkStatus, setCopyLinkStatus] = useState(null); // null | "copied" | "error"
   const [showRecommendedUsers, setShowRecommendedUsers] = useState(false);
+  const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
+  const [showUpgradeError, setShowUpgradeError] = useState(false);
   const [activeChannel, setActiveChannel] = useState(null);
   const [threadTab, setThreadTab] = useState("all");
   const [nowPlaying, setNowPlaying] = useState(null); // {id,title,author,seed,color,audioUrl}
@@ -1258,26 +1260,46 @@ export default function App() {
   }, [view]);
 
   // URLの ?post=<id> を検知して、専用ページ(/posts/<id>)へリダイレクトする(旧共有リンクの互換用)
-  // ?upgraded=1 (本登録完了直後のリダイレクト) を検知して、おすすめユーザーを表示する
+  // ?upgraded=1 (メール確認完了直後のリダイレクト) を検知して、完了メッセージとおすすめユーザーを表示する
+  // ?upgrade_error=1 (確認リンクが無効・期限切れ等) を検知して、エラーメッセージを表示する
   useEffect(() => {
     if (authLoading) return;
     const params = new URLSearchParams(window.location.search);
     const sharedPostId = params.get("post");
     const justUpgraded = params.get("upgraded") === "1";
+    const upgradeError = params.get("upgrade_error") === "1";
 
     if (sharedPostId) {
       router.replace(`/posts/${sharedPostId}`);
     }
 
+    if (justUpgraded) {
+      Promise.resolve().then(() => setShowUpgradeSuccess(true));
+    }
     if (justUpgraded && !isGuest) {
       Promise.resolve().then(() => setShowRecommendedUsers(true));
     }
+    if (upgradeError) {
+      Promise.resolve().then(() => setShowUpgradeError(true));
+    }
 
-    if (justUpgraded) {
+    if (justUpgraded || upgradeError) {
       window.history.replaceState(null, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
+
+  // メール確認完了/エラーメッセージを数秒後に自動で消す
+  useEffect(() => {
+    if (!showUpgradeSuccess) return;
+    const timer = setTimeout(() => setShowUpgradeSuccess(false), 6000);
+    return () => clearTimeout(timer);
+  }, [showUpgradeSuccess]);
+  useEffect(() => {
+    if (!showUpgradeError) return;
+    const timer = setTimeout(() => setShowUpgradeError(false), 6000);
+    return () => clearTimeout(timer);
+  }, [showUpgradeError]);
 
   function handleNotificationClick(n) {
     if (!n.is_read) {
@@ -3245,6 +3267,35 @@ export default function App() {
         <RecommendedUsersModal onClose={() => setShowRecommendedUsers(false)} onOpenProfile={openProfile} />
       )}
 
+      {showUpgradeSuccess && (
+        <div
+          className="fixed top-16 md:top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg"
+          style={{ background: C.teal, color: C.bg }}
+        >
+          <span className="text-sm font-medium">メールアドレスの確認が完了しました</span>
+          <button
+            type="button"
+            onClick={() => {
+              setShowUpgradeSuccess(false);
+              setView("home");
+            }}
+            className="text-xs font-medium px-2 py-1 rounded-lg shrink-0"
+            style={{ background: "rgba(0,0,0,0.15)" }}
+          >
+            ホームへ進む
+          </button>
+        </div>
+      )}
+
+      {showUpgradeError && (
+        <div
+          className="fixed top-16 md:top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium"
+          style={{ background: C.rose, color: C.bg }}
+        >
+          確認リンクが無効か期限切れです。お手数ですが再度お試しください。
+        </div>
+      )}
+
       {showNotifications && (
         <NotificationsPanel
           notifications={notificationsState.notifications}
@@ -3621,21 +3672,26 @@ function AuthPanel() {
   if (!isGuest) return null;
 
   const badge = badgeFor(profile?.total_likes_received ?? 0);
+  // 本登録フォーム送信直後、メール確認が完了するまでの間は display_name だけ先に
+  // 登録希望名で更新される(名前の重複予約のため)。is_guestがtrueのままの間は
+  // 確認待ちの状態なので、紛らわしくないよう「ゲスト」表示のままにする。
+  const isPendingConfirmation = Boolean(profile?.display_name && !profile.display_name.startsWith("guest_"));
+  const displayLabel = isPendingConfirmation ? "ゲスト" : (profile?.display_name ?? "ゲスト");
 
   return (
     <>
       <div className="p-4 rounded-xl mb-4 flex items-center gap-4" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
-        <Avatar name={profile?.display_name ?? "ゲスト"} avatarUrl={profile?.avatar_url} size={48} />
+        <Avatar name={displayLabel} avatarUrl={profile?.avatar_url} size={48} />
         <div>
           <div className="font-medium flex items-center gap-1.5">
-            {profile?.display_name ?? "ゲスト"}
+            {displayLabel}
             <badge.icon size={16} color={badge.color} />
           </div>
           <div className="text-xs mono-font" style={{ color: C.muted }}>
             称号: {badge.name} (累計{profile?.total_likes_received ?? 0}いいね)
           </div>
           <div className="text-xs mt-1" style={{ color: C.amber }}>
-            ゲストとして利用中
+            {isPendingConfirmation ? "メール確認待ちです" : "ゲストとして利用中"}
           </div>
         </div>
       </div>
