@@ -239,21 +239,34 @@ function AuthorLine({ name, likes, avatarUrl, avatarSize = 20, textClassName = "
   );
 }
 
-function FileInputButton({ label, accept, onChange, disabled = false }) {
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function FileInputButton({ label, accept, onChange, disabled = false, selected = null }) {
   return (
-    <label
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-      style={{
-        border: `1px solid ${C.border}`,
-        color: C.text,
-        opacity: disabled ? 0.5 : 1,
-        cursor: disabled ? "default" : "pointer",
-      }}
-    >
-      <Upload size={12} />
-      {label}
-      <input type="file" accept={accept} onChange={onChange} disabled={disabled} className="hidden" />
-    </label>
+    <div className="flex flex-col gap-1 items-start">
+      <label
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+        style={{
+          border: `1px solid ${C.border}`,
+          color: C.text,
+          opacity: disabled ? 0.5 : 1,
+          cursor: disabled ? "default" : "pointer",
+        }}
+      >
+        <Upload size={12} />
+        {label}
+        <input type="file" accept={accept} onChange={onChange} disabled={disabled} className="hidden" />
+      </label>
+      {selected && (
+        <div className="text-xs truncate max-w-full" style={{ color: C.muted }}>
+          選択中: {selected.name}({formatFileSize(selected.size)})
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -5629,6 +5642,7 @@ function PostForm({ onCancel, onSubmit, status, error, initialValues, submitLabe
             label="ファイルを選択"
             accept={AUDIO_EXTENSIONS.map((e) => `.${e}`).join(",")}
             onChange={handleFileChange(setAudioFile, AUDIO_EXTENSIONS)}
+            selected={audioFile}
           />
         </div>
       )}
@@ -6126,6 +6140,7 @@ function MidiPatchPostForm({
               label="ファイルを選択"
               accept={mainFileAllowedExt ? mainFileAllowedExt.map((e) => `.${e}`).join(",") : undefined}
               onChange={handleFileChange(setMainFile, mainFileAllowedExt)}
+              selected={mainFile}
             />
           </div>
           {midiPatchType === "patch" && (
@@ -6137,6 +6152,7 @@ function MidiPatchPostForm({
                 label="ファイルを選択"
                 accept={AUDIO_EXTENSIONS.map((e) => `.${e}`).join(",")}
                 onChange={handleFileChange(setPreviewFile, AUDIO_EXTENSIONS)}
+                selected={previewFile}
               />
             </div>
           )}
