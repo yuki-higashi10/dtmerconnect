@@ -5521,7 +5521,7 @@ function PostForm({ onCancel, onSubmit, status, error, initialValues, submitLabe
       <input
         value={tagsInput}
         onChange={(e) => setTagsInput(e.target.value)}
-        placeholder="タグ(カンマ区切りで複数入力可, 例: lofi, chill, 808)"
+        placeholder="タグ(任意, カンマ区切りで複数入力可, 例: lofi, chill, 808)"
         className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg"
         style={{ border: `1px solid ${C.border}`, color: C.text }}
       />
@@ -6027,7 +6027,7 @@ function MidiPatchPostForm({
       <input
         value={tagsInput}
         onChange={(e) => setTagsInput(e.target.value)}
-        placeholder="タグ(カンマ区切りで複数入力可, 例: lofi, chill, 808)"
+        placeholder="タグ(任意, カンマ区切りで複数入力可, 例: lofi, chill, 808)"
         className="bg-transparent outline-none text-sm px-3 py-2 rounded-lg"
         style={inputStyle}
       />
