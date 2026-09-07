@@ -1721,7 +1721,7 @@ export default function App() {
         key,
         used_daw: usedDaw || null,
         genre: genre || null,
-        tags: tags && tags.length > 0 ? tags : null,
+        tags: tags && tags.length > 0 ? tags : [],
         streaming_links: streamingLinks && streamingLinks.length > 0 ? streamingLinks : [],
       })
       .select("id")
@@ -1771,7 +1771,7 @@ export default function App() {
         title,
         body: body || null,
         genre: genre || null,
-        tags: tags && tags.length > 0 ? tags : null,
+        tags: tags && tags.length > 0 ? tags : [],
         bpm,
         key,
         target_synth: targetSynth,
