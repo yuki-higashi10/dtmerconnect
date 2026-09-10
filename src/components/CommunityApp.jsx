@@ -5908,7 +5908,9 @@ function MidiPatchPostForm({
       soundCategory,
       thumbnailFile,
       files:
-        midiPatchType === "midi" ? { midi: mainFile } : { preset: mainFile, audio_preview: previewFile },
+        midiPatchType === "midi"
+          ? { midi: mainFile, audio_preview: previewFile }
+          : { preset: mainFile, audio_preview: previewFile },
     });
   }
 
@@ -6143,19 +6145,17 @@ function MidiPatchPostForm({
               selected={mainFile}
             />
           </div>
-          {midiPatchType === "patch" && (
-            <div className="flex flex-col gap-1">
-              <div className="text-xs" style={{ color: C.muted }}>
-                試聴用音源(任意、ダウンロード前に聴けるプレビュー音源)
-              </div>
-              <FileInputButton
-                label="ファイルを選択"
-                accept={AUDIO_EXTENSIONS.map((e) => `.${e}`).join(",")}
-                onChange={handleFileChange(setPreviewFile, AUDIO_EXTENSIONS)}
-                selected={previewFile}
-              />
+          <div className="flex flex-col gap-1">
+            <div className="text-xs" style={{ color: C.muted }}>
+              試聴用音源(任意、ダウンロード前に聴けるプレビュー音源)
             </div>
-          )}
+            <FileInputButton
+              label="ファイルを選択"
+              accept={AUDIO_EXTENSIONS.map((e) => `.${e}`).join(",")}
+              onChange={handleFileChange(setPreviewFile, AUDIO_EXTENSIONS)}
+              selected={previewFile}
+            />
+          </div>
           {fileError && (
             <div className="text-xs" style={{ color: C.rose }}>
               {fileError}
