@@ -629,6 +629,16 @@ async function signOutAndBecomeGuest() {
 const ATTACHMENT_FILE_MAX_BYTES = 20 * 1024 * 1024;
 const MIDI_EXTENSIONS = ["mid", "midi"];
 const AUDIO_EXTENSIONS = ["mp3", "wav", "m4a", "ogg"];
+// ブラウザ/OSによってFile.typeの値が揺れる(例: .midが許可リスト外の"audio/mid"と報告される等)ため、
+// Storageアップロード時は拡張子から許可済みMIMEタイプへ明示的にマッピングする
+const ATTACHMENT_MIME_TYPES = {
+  mid: "audio/midi",
+  midi: "audio/midi",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  m4a: "audio/mp4",
+  ogg: "audio/ogg",
+};
 
 // user_id が指定postIdsのうちどれに対して行を持つか(いいね/ブックマーク済みIDの集合)を取得する
 async function fetchOwnIdSet(supabase, table, userId, postIds) {
@@ -892,11 +902,12 @@ function extractPatchesStoragePath(url) {
 }
 
 async function uploadAttachment(supabase, userId, postId, fileType, file) {
-  const ext = file.name.split(".").pop();
+  const ext = file.name.split(".").pop()?.toLowerCase();
   const path = `${userId}/${postId}/${fileType}.${ext}`;
+  const contentType = ATTACHMENT_MIME_TYPES[ext] ?? (file.type || "application/octet-stream");
   const { error: uploadError } = await supabase.storage
     .from("patches")
-    .upload(path, file, { contentType: file.type || "application/octet-stream" });
+    .upload(path, file, { contentType });
   if (uploadError) return { error: uploadError };
 
   const { data: urlData } = supabase.storage.from("patches").getPublicUrl(path);
