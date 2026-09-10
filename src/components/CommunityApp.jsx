@@ -905,9 +905,13 @@ async function uploadAttachment(supabase, userId, postId, fileType, file) {
   const ext = file.name.split(".").pop()?.toLowerCase();
   const path = `${userId}/${postId}/${fileType}.${ext}`;
   const contentType = ATTACHMENT_MIME_TYPES[ext] ?? (file.type || "application/octet-stream");
+  // supabase-jsはアップロード対象がFile/Blobの場合contentTypeオプションを無視し、
+  // File自体が持つ.type(ブラウザ依存で揺れる)をそのまま送信するため、
+  // 許可済みMIMEタイプを持つBlobへ明示的に詰め替えてから渡す
+  const uploadBody = file.type === contentType ? file : new Blob([file], { type: contentType });
   const { error: uploadError } = await supabase.storage
     .from("patches")
-    .upload(path, file, { contentType });
+    .upload(path, uploadBody, { contentType });
   if (uploadError) return { error: uploadError };
 
   const { data: urlData } = supabase.storage.from("patches").getPublicUrl(path);
