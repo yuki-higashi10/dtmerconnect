@@ -964,6 +964,7 @@ export default function App() {
   const [detailNotFound, setDetailNotFound] = useState(false);
   const timerRef = useRef(null);
   const audioRef = useRef(null);
+  const progressBarRef = useRef(null);
   // 投稿詳細ページに遷移する直前の画面(戻った時に復元する)
   const previousViewRef = useRef("home");
   const prevViewForCleanupRef = useRef(view);
@@ -1834,6 +1835,29 @@ export default function App() {
       .then(({ error }) => {
         if (!error) applyPostPatch("patch", postId, { downloads: currentCount + 1 });
       });
+  }
+
+  // 再生バーのクリック/タップ/ドラッグで再生位置をシークする
+  function seekToClientX(clientX) {
+    const el = progressBarRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    setProgress(ratio * 100);
+    if (nowPlaying?.audioUrl && audioRef.current && audioDuration) {
+      audioRef.current.currentTime = ratio * audioDuration;
+    }
+  }
+
+  function handleProgressPointerDown(e) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekToClientX(e.clientX);
+  }
+
+  function handleProgressPointerMove(e) {
+    if (e.buttons !== 1) return;
+    seekToClientX(e.clientX);
   }
 
   function play(item, color) {
@@ -3301,8 +3325,15 @@ export default function App() {
             <span className="mono-font text-xs hidden sm:inline" style={{ color: C.muted }}>
               {nowPlaying.audioUrl ? timeStr((progress / 100) * audioDuration) : timeStr((progress / 100) * 30)}
             </span>
-            <div className="flex-1 h-1 rounded-full" style={{ background: C.border }}>
-              <div className="h-1 rounded-full" style={{ width: `${progress}%`, background: nowPlaying.color }} />
+            <div
+              ref={progressBarRef}
+              className="flex-1 py-2 cursor-pointer touch-none"
+              onPointerDown={handleProgressPointerDown}
+              onPointerMove={handleProgressPointerMove}
+            >
+              <div className="h-1 rounded-full" style={{ background: C.border }}>
+                <div className="h-1 rounded-full" style={{ width: `${progress}%`, background: nowPlaying.color }} />
+              </div>
             </div>
             <span className="mono-font text-xs hidden sm:inline" style={{ color: C.muted }}>
               {nowPlaying.audioUrl ? timeStr(audioDuration) : "0:30"}
