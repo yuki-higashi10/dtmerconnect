@@ -1016,13 +1016,16 @@ export default function App() {
     return () => clearTimeout(handle);
   }, [globalSearchQuery, searchTab]);
 
-  // ホーム画面「今週の人気MIDI/パッチ」「新着Tips」「楽曲投稿の新着」用(実データから算出)
+  // ホーム画面「おすすめMIDI/パッチ」「新着Tips」「楽曲投稿の新着」用(実データから算出)
   const homePopularPatches = useMemo(() => {
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return searchState.posts
-      .filter((mp) => mp.kind === "patch" && mp.data.createdAt && new Date(mp.data.createdAt).getTime() >= weekAgo)
+      .filter((mp) => mp.kind === "patch")
       .slice()
-      .sort((a, b) => (b.data.likes ?? 0) - (a.data.likes ?? 0))
+      .sort((a, b) => {
+        const scoreA = (a.data.likes ?? 0) + (a.data.downloads ?? 0);
+        const scoreB = (b.data.likes ?? 0) + (b.data.downloads ?? 0);
+        return scoreB - scoreA;
+      })
       .slice(0, 10);
   }, [searchState.posts]);
   const homeNewTips = useMemo(
@@ -2551,7 +2554,7 @@ export default function App() {
                 )}
               </Row>
 
-              <Row title="今週の人気MIDI/パッチ">
+              <Row title="おすすめMIDI/パッチ">
                 {searchState.loading ? (
                   <div className="text-sm" style={{ color: C.muted }}>
                     読み込み中...
